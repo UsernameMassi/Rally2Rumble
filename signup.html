@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign up | Rally2Rumble</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;800&family=Barlow:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="stripe"></div>
+<header><a class="brand" href="index.html">Rally<b>2</b>Rumble</a><div class="row" id="nav"></div></header>
+<main>
+<form id="signup-form">
+  <h2>Join the rally</h2>
+  <label for="n">Driver name</label><input id="n" required>
+  <label for="e">Email</label><input id="e" type="email" required>
+  <label for="t">Team name</label><input id="t" required>
+  <label for="p">Passengers</label><select id="p"><option>1</option><option>2</option><option>3</option><option>4</option></select>
+  <label for="pw">Password</label><input id="pw" type="password" minlength="6" required>
+  <button>Register</button><div class="msg" id="m"></div>
+  <p>Already registered? <a class="link" href="login.html">Log in</a></p>
+</form>
+</main>
+<script src="java/java.js"></script>
+</body>
+</html>

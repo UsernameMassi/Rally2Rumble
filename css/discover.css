@@ -1,0 +1,9 @@
+/* Discover companies page */
+.kw{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.kw input{max-width:240px}
+.xtag{display:inline-flex;gap:6px;align-items:center;background:var(--accent2);color:#16161a;font-weight:600;font-size:14px;padding:3px 10px;border-radius:99px;cursor:pointer}
+.ctrl{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+.why{display:block;color:var(--mute);font-size:13px;max-width:380px}
+.dtbl td{vertical-align:top}.dtbl input[type=checkbox]{width:auto}
+.dtbl a{color:var(--accent);font-weight:600;text-decoration:none}
+.spin{font-weight:600;color:var(--accent)}
