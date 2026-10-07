@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Photos | Rally2Rumble</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Michroma&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/theme.css">
+<link rel="stylesheet" href="css/info.css">
+<script src="java/theme.js"></script>
+<style>
+.g-bar{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:20px 0}
+.g-chips{display:flex;gap:8px;flex-wrap:wrap}
+.g-chip{background:transparent;color:var(--ink);box-shadow:inset 0 0 0 1px var(--line);border-radius:99px;padding:6px 16px;clip-path:none;font-size:14px;cursor:pointer;border:0}
+.g-chip.on{background:var(--ink);color:var(--bg);box-shadow:none}
+.g-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+.g-item{position:relative;background:var(--panel);border:1px solid var(--line);overflow:hidden}
+.g-item img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;cursor:zoom-in;background:var(--line)}
+.g-meta{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;font-size:14px}
+.g-meta small{color:var(--mute);display:block}
+.g-dl{flex:none;text-decoration:none;font-size:13px;padding:6px 10px;border:1px solid var(--line);color:var(--ink)}
+.g-dl:hover{border-color:var(--ink)}
+.g-empty{border:1px dashed var(--line);padding:32px;text-align:center;color:var(--mute)}
+.g-prog{display:none;margin-top:10px;height:8px;background:var(--line)}
+.g-prog i{display:block;height:100%;width:0;background:var(--ink);transition:width .15s}
+.g-status{font-size:14px;color:var(--mute);min-height:20px;margin-top:6px}
+.lb{position:fixed;inset:0;background:rgba(0,0,0,.88);display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;z-index:50;padding:16px}
+.lb.open{display:flex}
+.lb img{max-width:100%;max-height:78vh;object-fit:contain}
+.lb p{color:#fff;margin:0;text-align:center}
+.lb .row{justify-content:center}
+.lb button,.lb a{font-size:14px}
+</style>
+</head>
+<body>
+<div class="stripe"></div>
+<header><a class="brand" href="index.html">Rally<b>2</b>Rumble</a>
+<nav class="nav2"><a href="index.html">Info</a><a href="route.html">Route</a><a href="agenda.html">Agenda</a><a href="gallery.html" class="on">Photos</a></nav>
+<div class="row" id="nav"></div></header>
+<main>
+<div class="page-top"><h1>Photos</h1></div>
+<p class="lead">Pictures from the day, taken by our photographer and by the people who joined in. Download your favourites or grab them all at once.</p>
+
+<div class="g-bar">
+  <div class="g-chips" id="chips"></div>
+  <div class="row"><button type="button" id="dlall">Download all (ZIP)</button></div>
+</div>
+<div class="g-prog" id="prog"><i></i></div>
+<div class="g-status" id="status" aria-live="polite"></div>
+
+<div class="g-grid" id="grid"></div>
+<div class="g-empty" id="empty" style="display:none">No photos yet. Check back soon.</div>
+</main>
+
+<div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Photo viewer">
+  <img id="lb-img" alt="">
+  <p id="lb-cap"></p>
+  <div class="row">
+    <button type="button" class="ghost sm" id="lb-prev">&larr; Previous</button>
+    <a class="btn sm" id="lb-dl" href="#" download>Download</a>
+    <button type="button" class="ghost sm" id="lb-next">Next &rarr;</button>
+    <button type="button" class="ghost sm" id="lb-close">Close</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="java/gallery-data.js"></script>
+<script src="java/rally-data.js"></script>
+<script src="java/rally.js"></script>
+<script src="java/java.js"></script>
+<script>
+(function () {
+  var ALL = (window.GALLERY || []).map(function (p) {
+    p.src = 'photos/' + p.file;
+    p.thumbSrc = p.thumb || p.src;
+    return p;
+  });
+  var filter = 'all', shown = [], cur = 0;
+  var $ = function (i) { return document.getElementById(i); };
+
+  function label(t) { return t === 'photographer' ? 'Photographer' : 'Guests'; }
+
+  function chips() {
+    var box = $('chips'); box.innerHTML = '';
+    var hasP = ALL.some(function (p) { return p.type === 'photographer'; });
+    var hasG = ALL.some(function (p) { return p.type !== 'photographer'; });
+    var opts = [['all', 'All (' + ALL.length + ')']];
+    if (hasP && hasG) {
+      opts.push(['photographer', 'Photographer']);
+      opts.push(['guest', 'Guests']);
+    }
+    if (opts.length === 1) { box.style.display = 'none'; return; }
+    opts.forEach(function (o) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'g-chip' + (filter === o[0] ? ' on' : ''); b.textContent = o[1];
+      b.onclick = function () { filter = o[0]; chips(); render(); };
+      box.appendChild(b);
+    });
+  }
+
+  function render() {
+    shown = ALL.filter(function (p) {
+      return filter === 'all' || (filter === 'photographer' ? p.type === 'photographer' : p.type !== 'photographer');
+    });
+    var g = $('grid'); g.innerHTML = '';
+    $('empty').style.display = ALL.length ? 'none' : 'block';
+    $('dlall').disabled = !ALL.length;
+    shown.forEach(function (p, i) {
+      var d = document.createElement('div'); d.className = 'g-item';
+      var img = document.createElement('img');
+      img.src = p.thumbSrc; img.loading = 'lazy'; img.alt = p.caption || ('Photo by ' + (p.by || 'unknown'));
+      img.onclick = function () { open(i); };
+      var m = document.createElement('div'); m.className = 'g-meta';
+      var t = document.createElement('div');
+      t.innerHTML = '<span></span><small></small>';
+      t.firstChild.textContent = p.caption || p.file;
+      t.lastChild.textContent = (p.by || '') + (p.by ? ' · ' : '') + label(p.type);
+      var a = document.createElement('a'); a.className = 'g-dl'; a.href = p.src; a.download = p.file; a.textContent = 'Download';
+      m.appendChild(t); m.appendChild(a); d.appendChild(img); d.appendChild(m); g.appendChild(d);
+    });
+  }
+
+  /* lightbox */
+  function open(i) { cur = i; show(); $('lb').classList.add('open'); }
+  function show() {
+    var p = shown[cur]; if (!p) return;
+    $('lb-img').src = p.src; $('lb-img').alt = p.caption || '';
+    $('lb-cap').textContent = (p.caption ? p.caption + ' · ' : '') + (p.by || '');
+    $('lb-dl').href = p.src; $('lb-dl').setAttribute('download', p.file);
+  }
+  function step(n) { cur = (cur + n + shown.length) % shown.length; show(); }
+  function close() { $('lb').classList.remove('open'); }
+  $('lb-prev').onclick = function () { step(-1); };
+  $('lb-next').onclick = function () { step(1); };
+  $('lb-close').onclick = close;
+  $('lb').addEventListener('click', function (e) { if (e.target === $('lb')) close(); });
+  document.addEventListener('keydown', function (e) {
+    if (!$('lb').classList.contains('open')) return;
+    if (e.key === 'Escape') close();
+    if (e.key === 'ArrowLeft') step(-1);
+    if (e.key === 'ArrowRight') step(1);
+  });
+
+  /* download all as ZIP */
+  function save(blob, name) {
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+  }
+  function setProg(v) { $('prog').style.display = v == null ? 'none' : 'block'; if (v != null) $('prog').firstChild.style.width = v + '%'; }
+
+  $('dlall').onclick = function () {
+    if (!ALL.length) return;
+    if (!window.JSZip) { $('status').textContent = 'ZIP tool could not load. Use the single download buttons instead.'; return; }
+    var btn = $('dlall'), zip = new JSZip(), done = 0, failed = 0, used = {};
+    btn.disabled = true; setProg(0); $('status').textContent = 'Collecting photos…';
+    var jobs = ALL.map(function (p) {
+      return fetch(p.src).then(function (r) { if (!r.ok) throw new Error(r.status); return r.blob(); })
+        .then(function (b) {
+          var n = p.file; if (used[n]) { n = (used[n]++) + '_' + n; } else used[n] = 1;
+          zip.file(n, b);
+        })
+        .catch(function () { failed++; })
+        .then(function () { done++; setProg(Math.round(done / ALL.length * 70)); $('status').textContent = 'Collecting photos… ' + done + '/' + ALL.length; });
+    });
+    Promise.all(jobs).then(function () {
+      if (failed === ALL.length) throw new Error('none');
+      $('status').textContent = 'Building ZIP…';
+      return zip.generateAsync({ type: 'blob', compression: 'STORE' }, function (m) { setProg(70 + Math.round(m.percent * 0.3)); });
+    }).then(function (blob) {
+      save(blob, 'Rally2Rumble-photos.zip');
+      $('status').textContent = failed ? ('Done, but ' + failed + ' photo(s) could not be added.') : 'Done. Your download has started.';
+    }).catch(function () {
+      $('status').textContent = 'Could not build the ZIP. Open the site through a web server (not by double-clicking the file) or use the single download buttons.';
+    }).then(function () { btn.disabled = false; setTimeout(function () { setProg(null); }, 1200); });
+  };
+
+  chips(); render();
+})();
+</script>
+</body>
+</html>
