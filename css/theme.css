@@ -1,0 +1,26 @@
+/* Rally2Rumble monochrome theme - loaded after style.css. Edit tokens here. */
+:root,:root[data-theme="dark"]{color-scheme:dark;--bg:#131314;--panel:#1a1a1c;--ink:#e4e4e1;--mute:#8d8d92;--line:#2c2c30;--accent:#d9d9d6;--accent2:#a9a9a6;--onaccent:#131314;--display:'Michroma','Space Grotesk',sans-serif}
+:root[data-theme="light"]{color-scheme:light;--bg:#e8e7e3;--panel:#f1f0ec;--ink:#222224;--mute:#6b6b70;--line:#cecdc8;--accent:#2a2a2d;--accent2:#bcbab5;--onaccent:#f1f0ec}
+body{transition:background .25s,color .25s}
+body{font:400 16px/1.55 'Space Grotesk',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+h1,h2,h3,.brand,.big,.opt b,button,.btn{font-family:'Space Grotesk',system-ui,sans-serif;letter-spacing:.06em}
+h1,h2,h3,.brand{font-weight:700}
+.brand{font-family:var(--display);font-size:16px;font-weight:400;letter-spacing:.14em}
+.brand b{color:transparent;-webkit-text-stroke:1px var(--ink)}
+.stripe{height:1px;background:linear-gradient(90deg,var(--ink),transparent 70%)}
+button,.btn{font-weight:700;font-size:15px;letter-spacing:.12em;clip-path:polygon(10px 0,100% 0,calc(100% - 10px) 100%,0 100%);transition:background .2s,color .2s}
+button:hover,.btn:hover{background:var(--accent2)}
+.ghost:hover{background:var(--line)}
+.card,form,.stat,.item,.evt,.modal,.drawer,.opt,.checks label{border-radius:0}
+.card,.stat,.evt,.kcard{border-left-width:1px}
+form{border-top-width:1px;border-top-color:var(--ink)}
+.top h2{font-size:30px;letter-spacing:.08em}.big{font-size:30px}
+.nav a.on{background:var(--ink);color:var(--bg)}
+.tag,.xtag,.v-high,.pill.hi{color:#16161a}.chip.on,.v-medium{color:var(--onaccent)}
+.toast{border:1px solid var(--ink)}
+.demo{display:none}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.themebtn{position:fixed;right:16px;bottom:16px;z-index:15;font-size:13px;padding:8px 14px;clip-path:none;background:var(--panel);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+.themebtn:hover{background:var(--line)}

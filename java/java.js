@@ -1,5 +1,4 @@
-/* Rally2Rumble - shared script. DEMO ONLY: data lives in this browser's localStorage.
-   Replace rd()/wr() and the sign-in functions with real backend calls before going live. */
+/* Rally2Rumble - shared script. Accounts: see auth.js. Sponsor data still lives in this browser's localStorage. */
 (function () {
   'use strict';
   var KEY = 'r2r_state', SES = 'r2r_session', USR = 'r2r_users';
@@ -52,7 +51,7 @@
   function count() { var c = {}; COLS.forEach(function (k) { c[k] = 0; }); state.sponsors.forEach(function (s) { c[s.status]++; }); return c; }
   function pill(v) { return '<span class="pill v-' + v + '">' + v + '</span>'; }
   function head(t, sub, action) { return '<div class="top"><div><h2>' + esc(t) + '</h2><p class="mute">' + sub + '</p></div>' + (action || '') + '</div>'; }
-  function evLine() { return esc(state.event.name) + ' \u00b7 ' + esc(state.event.date); }
+  function evLine() { return esc(state.event.name); }
   function toast(t) { var d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(function () { d.remove(); }, 2200); }
   function modal(html, side) { closeM(); var d = document.createElement('div'); d.id = 'ov'; d.className = 'overlay' + (side ? ' side' : ''); d.onclick = function (e) { if (e.target === d) closeM(); }; d.innerHTML = html; document.body.appendChild(d); }
   function closeM() { var d = $('ov'); if (d) d.remove(); }
@@ -161,8 +160,8 @@
   };
   P.settings = function () {
     var e = state.event;
-    return head('Settings', 'Event details and demo data', '') + '<div class="card" style="max-width:480px"><label>Event name</label><input id="s1" value="' + esc(e.name) + '"><div class="r2"><div><label>Date</label><input id="s2" value="' + esc(e.date) + '"></div><div><label>Place</label><input id="s3" value="' + esc(e.place) + '"></div></div>' +
-      '<label>Sponsor target</label><input id="s4" type="number" min="1" value="' + state.target + '"><button class="block" onclick="R2R.saveSet()">Save</button><button class="ghost block" onclick="R2R.reset()">Reset demo data</button></div>';
+    return head('Settings', 'Event details and sponsor target', '') + '<div class="card" style="max-width:480px"><label>Event name</label><input id="s1" value="' + esc(e.name) + '"><div class="r2"><div><label>Date</label><input id="s2" value="' + esc(e.date) + '"></div><div><label>Place</label><input id="s3" value="' + esc(e.place) + '"></div></div>' +
+      '<label>Sponsor target</label><input id="s4" type="number" min="1" value="' + state.target + '"><button class="block" onclick="R2R.saveSet()">Save</button><button class="ghost block" onclick="R2R.reset()">Reset sponsor data</button></div>';
   };
 
   /* ---------- actions (called from inline handlers) ---------- */
@@ -202,8 +201,8 @@
     setStatus: function (id, k) { var s = get(id); s.status = k; s.attn = null; s.sub = 'Updated today'; save(); closeM(); draw(); toast('Moved to ' + LABEL[k]); },
     snooze: function (id) { var s = get(id); s.rem = (s.rem || 0) + 3; if (s.attn === 'due') s.attn = null; save(); closeM(); draw(); toast('Reminder snoozed 3 days'); },
     accept: function (id) { state.compose = { id: id, angle: 'followup', benefits: [0, 1], channel: 'Email', v: 0, text: null }; save(); location.href = 'draft.html?id=' + id; },
-    saveSet: function () { state.event = { name: $('s1').value, date: $('s2').value, place: $('s3').value }; state.target = Math.max(1, +$('s4').value || 6); save(); toast('Saved'); shell(); },
-    reset: function () { state = seed(); save(); toast('Demo data reset'); draw(); }
+    saveSet: function () { state.event = { name: $('s1').value, date: $('s2').value, place: $('s3').value }; state.target = Math.max(1, +$('s4').value || 6); save(); toast('Saved'); shell(); tick(); },
+    reset: function () { state = seed(); save(); toast('Sponsor data reset'); draw(); }
   };
   window.$ = $;
   window.R2R_P = P;
@@ -213,8 +212,12 @@
   function shell() {
     var nav = [['dashboard', 'Dashboard'], ['find', 'Find sponsors'], ['discover', 'Discover companies'], ['pipeline', 'Pipeline'], ['messages', 'Messages'], ['settings', 'Settings']];
     var on = { dashboard: 'dashboard', find: 'find', discover: 'discover', sponsor: 'find', angle: 'find', draft: 'messages', pipeline: 'pipeline', messages: 'messages', settings: 'settings' }[page];
-    $('side').innerHTML = '<a class="brand" href="index.html">Rally<b>2</b>Rumble</a><div class="evt"><b>' + esc(state.event.name) + '</b><small>' + esc(state.event.date) + ' \u00b7 ' + esc(state.event.place) + '</small></div><nav class="nav">' +
-      nav.map(function (n) { return '<a href="' + n[0] + '.html" class="' + (n[0] === on ? 'on' : '') + '">' + n[1] + '</a>'; }).join('') + '</nav><div class="demo">Demo data only</div><div class="who"><span>' + esc(user().name) + '</span><button class="ghost sm" onclick="R2R.out()">Log out</button></div>';
+    $('side').innerHTML = '<a class="brand" href="index.html">Rally<b>2</b>Rumble</a><div class="evt"><b>' + esc(state.event.name) + '</b><small id="clk"></small></div><nav class="nav">' +
+      nav.map(function (n) { return '<a href="' + n[0] + '.html" class="' + (n[0] === on ? 'on' : '') + '">' + n[1] + '</a>'; }).join('') + '</nav><div class="who"><span>' + esc(user().name) + '</span><button class="ghost sm" onclick="R2R.out()">Log out</button></div>';
+  }
+  function tick() {
+    var c = $('clk'); if (!c) return; var d = new Date();
+    c.textContent = d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }) + ', ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
   }
   function topNav() {
     var n = $('nav'); if (!n) return;
@@ -223,20 +226,23 @@
   document.addEventListener('DOMContentLoaded', function () {
     topNav(); var f;
     if ((f = $('signup-form'))) f.addEventListener('submit', function (ev) {
-      ev.preventDefault(); var all = rd(USR, {}), e = $('e').value.toLowerCase();
-      if (all[e]) { $('m').textContent = 'That email is already registered.'; return; }
-      all[e] = { name: $('n').value, team: $('t').value, pax: $('p').value, pw: $('pw').value, email: e }; wr(USR, all); wr(SES, e); location.href = 'dashboard.html';
+      ev.preventDefault(); var btn = f.querySelector('button'); btn.disabled = true; $('m').textContent = '';
+      R2R_AUTH.signup({ name: $('n').value.trim(), email: $('e').value.trim().toLowerCase(), team: $('t').value.trim(), pax: $('p').value, pw: $('pw').value })
+        .then(function (r) { if (r.pending) { $('m').textContent = 'Check your inbox to confirm your email, then log in.'; btn.disabled = false; return; } wr(SES, r.email); location.href = 'dashboard.html'; })
+        .catch(function (e) { $('m').textContent = e.message; btn.disabled = false; });
     });
     if ((f = $('login-form'))) {
       f.addEventListener('submit', function (ev) {
-        ev.preventDefault(); var e = $('e').value.toLowerCase(), u = rd(USR, {})[e];
-        if (!u || u.pw !== $('pw').value) { $('m').textContent = 'Wrong email or password.'; return; } wr(SES, e); location.href = 'dashboard.html';
+        ev.preventDefault(); var btn = f.querySelector('button'); btn.disabled = true; $('m').textContent = '';
+        R2R_AUTH.login($('e').value.trim().toLowerCase(), $('pw').value)
+          .then(function (r) { wr(SES, r.email); location.href = 'dashboard.html'; })
+          .catch(function (e) { $('m').textContent = e.message; btn.disabled = false; });
       });
       $('guest').onclick = function () { wr(SES, 'guest'); location.href = 'dashboard.html'; };
     }
     if (APP.indexOf(page) > -1) {
       if (!rd(SES, null)) { location.href = 'login.html'; return; }
-      shell(); draw();
+      shell(); tick(); setInterval(tick, 15000); draw();
       if (page === 'pipeline') {
         if (qs.get('open') && get(qs.get('open'))) drawer(get(qs.get('open')));
         var sid = qs.get('sent'), s = sid && get(sid);
