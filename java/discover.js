@@ -24,7 +24,7 @@
   var esc = C.esc;
   var CENTER = { lat: 50.8514, lon: 5.6910 };               // Maastricht
   var DEFAULT_MODEL = 'gemini-2.5-flash-lite';
-  var ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+  var ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];   /* tried in this order; kumi.systems is now private.coffee */
   var AI_CRITERIA = false;       // true = AI also scores the 4 criteria (costs more tokens)
   var AI_BATCH_DEFAULT = 20;     // companies sent to the AI per click
   var AI_CACHE_DAYS = 30, AI_CACHE_MAX = 800, OSM_CACHE_HOURS = 12, CACHE_VER = 'v3';
@@ -203,7 +203,7 @@
       if (!lsSet('r2r_osmcache', { key: key, ver: CACHE_VER, t: Date.now(), results: D.results })) { try { localStorage.removeItem('r2r_osmcache'); } catch (e) {} }
       var n = applyAiCache();
       D.msg = D.results.length + ' real Dutch companies found within ' + D.radius + ' km of Maastricht, best keyword matches first.' + (n ? ' ' + n + ' were already ranked by AI (saved answers).' : ''); C.draw(); sharedNote();
-    }).catch(function (e) { D.busy = ''; D.err = 'OpenStreetMap search failed (' + e.message + '). The free server may be busy, try again in a minute or use a smaller radius.'; C.draw(); });
+    }).catch(function (e) { D.busy = ''; D.err = 'OpenStreetMap search failed on all ' + ENDPOINTS.length + ' free servers (last error: ' + e.message + '). They are shared and often busy. Try again in a minute, use a smaller radius, or fewer categories.'; C.draw(); });
   }
   var exCache = { s: null, re: null };
   function exRe() {                                          // hide-list compiled into ONE regex, rebuilt only when it changes
