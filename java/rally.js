@@ -1,14 +1,36 @@
 /* Rally details store, page renderers and PDF export (no libraries needed) */
 (function (root) {
-  var KEY = 'r2r_rally';
+  var KEY = 'r2r_rally', CK = 'r2r_rally_shared';   // KEY = old per-browser edits, CK = copy of the published details
+  var SBU = 'https://xhfckfrekbvhjsqftwcb.supabase.co', SBK = 'sb_publishable_hlUllOuo20Y_iL-5Cey4Fg_9tky4mSR';   // public values, same as auth.js
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  /* The published details live in Supabase (table rally_details, readable by everybody, writable by admins only).
+     A copy is kept in this browser so pages show instantly; java/rally-data.js is the fallback until something is published. */
   function get() {
-    try { var s = localStorage.getItem(KEY); if (s) return JSON.parse(s); } catch (e) {}
+    try { var s = localStorage.getItem(CK); if (s) return JSON.parse(s); } catch (e) {}
     return clone(root.RALLY_DEFAULT);
   }
-  function save(d) { try { localStorage.setItem(KEY, JSON.stringify(d)); return true; } catch (e) { return false; } }
-  function reset() { try { localStorage.removeItem(KEY); } catch (e) {} }
+  function save(d) { try { localStorage.setItem(CK, JSON.stringify(d)); return true; } catch (e) { return false; } }   // local copy only
+  function reset() { try { localStorage.removeItem(CK); } catch (e) {} }
+  function hasShared() { try { return !!localStorage.getItem(CK); } catch (e) { return false; } }
+  function legacy() { try { var s = localStorage.getItem(KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+  function isAdmin() { try { return JSON.parse(localStorage.getItem('r2r_isadmin')) === true; } catch (e) { return false; } }
+  function fetchShared() {                                   // resolves true when the published details changed
+    return fetch(SBU + '/rest/v1/rally_details?id=eq.1&select=data', { headers: { apikey: SBK } })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (a) {
+        if (!a || !a[0] || !a[0].data || !a[0].data.info) return false;
+        var now = JSON.stringify(a[0].data), had = null; try { had = localStorage.getItem(CK); } catch (e) {}
+        if (had === now) return false;
+        save(a[0].data); return true;
+      }).catch(function () { return false; });
+  }
+  function publish(d) {                                      // admins only: the database rules refuse anybody else
+    var C = root.R2R_CORE;
+    if (!C || !C.sb || !C.sb.on()) return Promise.reject(new Error('log in as an admin first'));
+    return C.sb.json('POST', '/rest/v1/rally_details?on_conflict=id', { id: 1, data: d, updated_at: new Date().toISOString() }, { Prefer: 'resolution=merge-duplicates,return=minimal' })
+      .then(function () { save(d); return true; });
+  }
   function isMember() { var s = null; try { s = JSON.parse(localStorage.getItem('r2r_session')); } catch (e) {} return !!s && s !== 'guest'; }
 
   /* ---------- route geometry (620 x 250 box) ---------- */
@@ -134,14 +156,15 @@
       d.agenda.items.map(function (a) { return [a.time, a.title, a.desc]; }), d.agenda.note);
     fileDownload('rally2rumble-' + kind + '.pdf', bytes, 'application/pdf');
   }
-  function dataFileText(d) { return '/* Published rally details. Edit on manage.html, then use "Download data file" and replace this file on your server. */\nwindow.RALLY_DEFAULT = ' + JSON.stringify(d, null, 2) + ';\n'; }
+  function dataFileText(d) { return '/* Fallback rally details (used until something is published from the Rally details page). Optional backup: replace this file with a downloaded copy. */\nwindow.RALLY_DEFAULT = ' + JSON.stringify(d, null, 2) + ';\n'; }
 
-  root.RALLY = { get: get, save: save, reset: reset, esc: esc, isMember: isMember, clone: clone, buildPdf: buildPdf, downloadPdf: downloadPdf, fileDownload: fileDownload, dataFileText: dataFileText };
+  root.RALLY = { get: get, save: save, reset: reset, esc: esc, isMember: isMember, isAdmin: isAdmin, publish: publish, fetchShared: fetchShared, hasShared: hasShared, legacy: legacy, clone: clone, buildPdf: buildPdf, downloadPdf: downloadPdf, fileDownload: fileDownload, dataFileText: dataFileText };
 
   if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', function () {
     var d = get(); renderInfo(d); renderRoute(d); renderAgenda(d);
+    fetchShared().then(function (changed) { if (!changed) return; var n = get(); renderInfo(n); renderRoute(n); renderAgenda(n); root.dispatchEvent(new Event('rally-shared')); });
     Array.prototype.forEach.call(document.querySelectorAll('[data-pdf]'), function (b) { b.addEventListener('click', function () { downloadPdf(b.getAttribute('data-pdf')); }); });
     var nav = document.querySelector('.nav2');
-    if (nav && isMember() && !document.querySelector('.nav2 a[href="manage.html"]')) { var a = document.createElement('a'); a.href = 'manage.html'; a.textContent = 'Manage'; if (/manage\.html/.test(location.pathname)) a.className = 'on'; nav.appendChild(a); }
+    if (nav && isMember() && isAdmin() && !document.querySelector('.nav2 a[href="manage.html"]')) { var a = document.createElement('a'); a.href = 'manage.html'; a.textContent = 'Manage'; if (/manage\.html/.test(location.pathname)) a.className = 'on'; nav.appendChild(a); }
   });
 })(window);

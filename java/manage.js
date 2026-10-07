@@ -5,7 +5,7 @@
   'use strict';
   var C = window.R2R_CORE, P = window.R2R_P, R = window.RALLY;
   if (!C || !P) return;
-  var esc = C.esc, d = null;
+  var esc = C.esc, d = null, dirty = false, fromOld = false;   // dirty = edits not published yet
 
   var FIELDS = [['info', 'intro', 'Intro text', 'area'], ['info', 'date', 'Date'], ['info', 'location', 'Start location'], ['info', 'format', 'Format'], ['info', 'teams', 'Teams']];
   var BOXES = {
@@ -13,7 +13,13 @@
     agenda: { arr: function () { return d.agenda.items; }, f: ['time', 'title', 'desc'], l: ['Time', 'Title', 'Description'], blank: { time: '', title: 'New item', desc: '' } }
   };
 
-  function data() { if (!d) d = R.get(); return d; }
+  function data() {
+    if (!d) {
+      var old = !R.hasShared() && R.legacy();              // edits an older version saved in this browser only
+      if (old) { d = old; dirty = true; fromOld = true; } else d = R.get();
+    }
+    return d;
+  }
   function field(sec, key, label, kind) {
     var v = esc(data()[sec][key] || ''), h = 'oninput="R2R_RALLY.set(\'' + sec + '\',\'' + key + '\',this.value)"';
     return '<label>' + label + '</label>' + (kind === 'area' ? '<textarea class="s" style="min-height:110px" ' + h + '>' + v + '</textarea>' : '<input value="' + v + '" ' + h + '>');
@@ -35,7 +41,8 @@
       '<div class="card" style="max-width:520px"><p>You can read the rally details on the public pages.</p><a class="btn ghost block" href="index.html">Info</a><a class="btn ghost block" href="route.html">Route</a><a class="btn ghost block" href="agenda.html">Agenda</a></div>';
     if (!R || typeof R.get !== 'function') return head('') + '<div class="card"><p class="mute">The rally data did not load. Check that rally-data.js and rally.js are linked above java.js on this page.</p></div>';
     data();
-    return head('Change the info, route and agenda. Saving updates the Info, Route and Agenda pages and both PDFs in this browser.') +
+    return head('Change the info, route and agenda. Publishing updates the Info, Route and Agenda pages and both PDFs for every visitor.') +
+      (fromOld ? '<div class="note" style="max-width:760px">Your earlier edits from this browser were loaded. Press Publish to share them with everyone.</div>' : '') +
       '<div class="card" style="max-width:760px"><div class="lbl">Rally info</div>' +
       FIELDS.map(function (f) { return field(f[0], f[1], f[2], f[3]); }).join('') + '</div>' +
       '<div class="card" style="max-width:760px;margin-top:16px"><div class="lbl">Route stops</div><div class="stack">' + rows('route') + '</div>' +
@@ -44,19 +51,32 @@
       '<div class="card" style="max-width:760px;margin-top:16px"><div class="lbl">Agenda</div><div class="stack">' + rows('agenda') + '</div>' +
       '<button type="button" class="ghost sm" onclick="R2R_RALLY.add(\'agenda\')">+ Add agenda item</button>' +
       '<label>Note under the agenda</label><input value="' + esc(d.agenda.note || '') + '" oninput="R2R_RALLY.set(\'agenda\',\'note\',this.value)"></div>' +
-      '<div class="row" style="margin:20px 0"><button type="button" onclick="R2R_RALLY.save()">Save changes</button><button type="button" class="ghost" onclick="R2R_RALLY.reset()">Reset to published</button></div>' +
-      '<div class="note" style="max-width:760px"><b>Visible to visitors?</b> Saved changes are stored in this browser only. To publish them to everyone, download the data file and replace <code>java/rally-data.js</code> on your site.' +
+      '<div class="row" style="margin:20px 0"><button type="button" onclick="R2R_RALLY.save()">Publish changes</button><button type="button" class="ghost" onclick="R2R_RALLY.reset()">Discard unsaved changes</button></div>' +
+      '<div class="note" style="max-width:760px"><b>Backup:</b> the published details are stored in the database. You can also download them as a file.' +
       '<div class="row" style="margin-top:10px"><button type="button" class="ghost sm" onclick="R2R_RALLY.dl()">Download data file</button></div></div>';
   };
 
   window.R2R_RALLY = {
-    set: function (sec, key, v) { d[sec][key] = v; },
-    row: function (name, i, f, v) { BOXES[name].arr()[i][f] = v; },
-    add: function (name) { BOXES[name].arr().push(JSON.parse(JSON.stringify(BOXES[name].blank))); C.draw(); },
-    rm: function (name, i) { BOXES[name].arr().splice(i, 1); C.draw(); },
-    mv: function (name, i, dir) { var a = BOXES[name].arr(), j = i + dir; if (j < 0 || j >= a.length) return; var t = a[i]; a[i] = a[j]; a[j] = t; C.draw(); },
-    save: function () { C.toast(R.save(d) ? 'Saved. Pages and PDFs are updated.' : 'Could not save in this browser.'); },
-    reset: function () { if (!confirm('Discard saved changes and go back to the published details?')) return; R.reset(); d = R.get(); C.draw(); C.toast('Reset to published details'); },
+    set: function (sec, key, v) { d[sec][key] = v; dirty = true; },
+    row: function (name, i, f, v) { BOXES[name].arr()[i][f] = v; dirty = true; },
+    add: function (name) { BOXES[name].arr().push(JSON.parse(JSON.stringify(BOXES[name].blank))); dirty = true; C.draw(); },
+    rm: function (name, i) { BOXES[name].arr().splice(i, 1); dirty = true; C.draw(); },
+    mv: function (name, i, dir) { var a = BOXES[name].arr(), j = i + dir; if (j < 0 || j >= a.length) return; var t = a[i]; a[i] = a[j]; a[j] = t; dirty = true; C.draw(); },
+    save: function () {
+      C.toast('Publishing\u2026');
+      R.publish(d).then(function () { dirty = false; fromOld = false; C.toast('Published. Everyone now sees the new details.'); },
+        function (e) { C.toast('Could not publish: ' + e.message); });
+    },
+    reset: function () {
+      if (!confirm('Discard unsaved changes and reload the published details?')) return;
+      dirty = false; fromOld = false;
+      R.fetchShared().then(function () { d = R.get(); C.draw(); C.toast('Reloaded the published details'); });
+    },
     dl: function () { R.fileDownload('rally-data.js', new TextEncoder().encode(R.dataFileText(d)), 'text/javascript'); }
   };
+  /* the published details arrived from the database after this page was drawn: show them unless there are unpublished edits */
+  window.addEventListener('rally-shared', function () {
+    if (dirty) return; d = null;
+    var v = document.getElementById('view'); if (v && v.innerHTML) C.draw();
+  });
 })();
