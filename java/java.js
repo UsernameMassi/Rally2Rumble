@@ -25,31 +25,25 @@
       status: status, sub: '', attn: null, crit: crit, notes: notes, email: email, history: [], reply: '', rem: null };
   }
   function seed() {
-    var l = [
-      sp('autoparts', 'AutoParts Limburg', 'Automotive', 'Limburg', 'Maastricht', 40, 92, 'high', 'suggested', [95, 88, 90, 96], 'Regional parts supplier with 6 branches. Already supports a local karting team.', 'inkoop@autoparts-limburg.nl'),
-      sp('verheyen', 'Verheyen Banden', 'Tyres', 'Limburg', 'Heerlen', 25, 87, 'high', 'conversation', [90, 85, 92, 88], 'Family-run tyre specialist. Owner is a rally fan.', 'info@verheyenbanden.nl'),
-      sp('maasstad', 'Maasstad Energie', 'Energy', 'NL', 'Rotterdam', 120, 74, 'medium', 'approached', [60, 75, 70, 80], 'Energy supplier with a sports sponsorship budget.', 'sponsoring@maasstad.nl'),
-      sp('noordbouw', 'NoordBouw BV', 'Construction', 'NL', 'Groningen', 80, 61, 'low', 'declined', [55, 60, 40, 50], 'Declined: no budget this year.', 'info@noordbouw.nl'),
-      sp('frituur', 'Frituur \'t Hoekje', 'Horeca', 'Limburg', 'Valkenburg', 6, 48, 'low', 'suggested', [40, 55, 80, 30], 'Local snack bar near the start line.', 'hoekje@example.nl'),
-      sp('bakkerij', 'Bakkerij Smeets', 'Retail', 'Limburg', 'Sittard', 12, 44, 'low', 'suggested', [35, 50, 75, 25], 'Bakery with three shops in the region.', 'smeets@example.nl'),
-      sp('peeters', 'Garage Peeters', 'Automotive', 'Limburg', 'Geleen', 10, 81, 'medium', 'conversation', [88, 70, 85, 80], 'Independent garage, rally service partner.', 'info@garagepeeters.nl'),
-      sp('zwarte', 'Caf\u00e9 De Zwarte Ruiter', 'Horeca', 'Limburg', 'Valkenburg', 8, 70, 'medium', 'confirmed', [60, 80, 90, 50], 'Signed as hospitality partner.', 'zwarte@example.nl'),
-      sp('plaza', 'Hotel Valkenburg Plaza', 'Horeca', 'Limburg', 'Valkenburg', 30, 66, 'medium', 'confirmed', [55, 75, 90, 45], 'Signed as hotel partner for teams.', 'plaza@example.nl')
-    ];
-    var m = {}; l.forEach(function (s) { m[s.id] = s; });
-    m.verheyen.history = [['Approached', '3 March'], ['Opened your email', '4 March'], ['Replied', '6 March']];
-    m.verheyen.reply = 'Interesting \u2013 can you send the sponsor package pricing?';
-    m.verheyen.attn = 'replied'; m.verheyen.sub = 'Replied 2 days ago \u00b7 waiting on you';
-    m.maasstad.history = [['Approached', '28 February']]; m.maasstad.attn = 'due'; m.maasstad.sub = '7 days, no reply';
-    m.peeters.sub = 'Call booked'; m.peeters.history = [['Approached', '1 March'], ['Call booked', '5 March']];
-    m.zwarte.sub = 'Signed'; m.plaza.sub = 'Signed'; m.noordbouw.sub = 'No budget';
-    return { sponsors: l, messages: [], compose: null, target: 6, event: { name: 'Rally To Rumble', date: '12 April', place: 'Valkenburg' } };
+    return { sponsors: [], messages: [], compose: null, target: 6, v2: 1, event: { name: 'Rally To Rumble', date: '', place: '' } };
   }
   var state = rd(KEY, null) || seed();
   function save() { wr(KEY, state); }
+  (function () {
+    if (state.v2) return;
+    var old = ['autoparts', 'verheyen', 'maasstad', 'noordbouw', 'frituur', 'bakkerij', 'peeters', 'zwarte', 'plaza'];
+    state.sponsors = state.sponsors.filter(function (s) { return old.indexOf(s.id) < 0; });
+    state.sponsors.forEach(function (s) {
+      var guessed = /^osm/.test(s.id) && String(s.notes).indexOf('AI note:') < 0, flat = s.match === 50 && (s.crit || []).every(function (v) { return v === 50; });
+      if (guessed || flat) { s.match = null; s.crit = null; if (guessed) s.value = null; }
+    });
+    if (state.event.date === '12 April') state.event.date = '';
+    if (state.event.place === 'Valkenburg') state.event.place = '';
+    state.v2 = 1; save();
+  })();
   function get(id) { return state.sponsors.filter(function (s) { return s.id === id; })[0]; }
   function count() { var c = {}; COLS.forEach(function (k) { c[k] = 0; }); state.sponsors.forEach(function (s) { c[s.status]++; }); return c; }
-  function pill(v) { return '<span class="pill v-' + v + '">' + v + '</span>'; }
+  function pill(v) { if (!v) return '<span class="pill">\u2013</span>'; return '<span class="pill v-' + v + '">' + v + '</span>'; }
   function head(t, sub, action) { return '<div class="top"><div><h2>' + esc(t) + '</h2><p class="mute">' + sub + '</p></div>' + (action || '') + '</div>'; }
   function evLine() { return esc(state.event.name); }
   function toast(t) { var d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(function () { d.remove(); }, 2200); }
@@ -77,13 +71,13 @@
   P.find = function () {
     var inds = ['All']; state.sponsors.forEach(function (s) { if (inds.indexOf(s.industry) < 0) inds.push(s.industry); });
     var l = state.sponsors.filter(function (s) { return s.status === 'suggested' || s.status === 'approached' || s.status === 'conversation'; })
-      .filter(function (s) { return (F.ind === 'All' || s.industry === F.ind) && (F.reg === 'Any' || s.region === F.reg) && (F.mot === 'Any' || s.crit[3] >= 85) && (F.val === 'Any' || s.value === F.val.toLowerCase()); });
-    l.sort(function (a, b) { var x = F.key === 'value' ? VAL[a.value] : a[F.key], y = F.key === 'value' ? VAL[b.value] : b[F.key]; return typeof x === 'string' ? x.localeCompare(y) * F.dir : (x - y) * F.dir; });
+      .filter(function (s) { return (F.ind === 'All' || s.industry === F.ind) && (F.reg === 'Any' || s.region === F.reg) && (F.mot === 'Any' || (s.crit && s.crit[3] >= 85)) && (F.val === 'Any' || s.value === F.val.toLowerCase()); });
+    l.sort(function (a, b) { var x = F.key === 'value' ? VAL[a.value] : a[F.key], y = F.key === 'value' ? VAL[b.value] : b[F.key]; if (x == null) x = -1; if (y == null) y = -1; return typeof x === 'string' ? x.localeCompare(y) * F.dir : (x - y) * F.dir; });
     var th = function (k, t) { return '<th onclick="R2R.sort(\'' + k + '\')">' + t + (F.key === k ? (F.dir > 0 ? ' \u2191' : ' \u2193') : '') + '</th>'; };
-    return head('Suggested sponsors', l.length + ' matches \u00b7 ranked by fit', '<button class="ghost" onclick="R2R.add()">+ Add manually</button>') +
+    return head('Suggested sponsors', l.length + ' sponsors \u00b7 click a column to sort', '<button class="ghost" onclick="R2R.add()">+ Add manually</button>') +
       '<div class="find"><div class="wrap"><table class="tbl"><tr>' + th('name', 'Company') + th('industry', 'Industry') + th('match', 'Match') + th('value', 'Value') + '<th></th></tr>' +
-      l.map(function (s) { return '<tr><td><b>' + esc(s.name) + '</b></td><td>' + esc(s.industry) + '</td><td><div class="bar"><i style="width:' + s.match + '%"></i></div><small>' + s.match + '%</small></td><td>' + pill(s.value) + '</td><td><a href="sponsor.html?id=' + s.id + '">Why? \u2192</a></td></tr>'; }).join('') +
-      '</table></div><div class="card"><div class="lbl">Industry</div><div class="chips">' + inds.map(function (v) { return chip('ind', v, F.ind); }).join('') + '</div>' +
+      l.map(function (s) { return '<tr><td><b>' + esc(s.name) + '</b></td><td>' + esc(s.industry) + '</td><td>' + (s.match == null ? '<small class="mute">Not rated</small>' : '<div class="bar"><i style="width:' + s.match + '%"></i></div><small>' + s.match + '%</small>') + '</td><td>' + pill(s.value) + '</td><td><a href="sponsor.html?id=' + s.id + '">Why? \u2192</a></td></tr>'; }).join('') +
+      '</table>' + (l.length ? '' : '<p class="mute" style="padding:12px">No sponsors yet. <a class="link" href="discover.html">Discover companies</a> or add one manually.</p>') + '</div><div class="card"><div class="lbl">Industry</div><div class="chips">' + inds.map(function (v) { return chip('ind', v, F.ind); }).join('') + '</div>' +
       '<div class="lbl">Region</div><div class="chips">' + ['Any', 'Limburg', 'NL'].map(function (v) { return chip('reg', v, F.reg); }).join('') + '</div>' +
       '<div class="lbl">Motorsport link</div><div class="chips">' + ['Any', 'Direct'].map(function (v) { return chip('mot', v, F.mot); }).join('') + '</div>' +
       '<div class="lbl">Estimated value</div><div class="chips">' + ['Any', 'Low', 'Medium', 'High'].map(function (v) { return chip('val', v, F.val); }).join('') + '</div></div></div>';
@@ -91,15 +85,15 @@
 
   P.sponsor = function () {
     var s = get(qs.get('id')); if (!s) { location.href = 'find.html'; return ''; }
-    return head(s.name, esc(s.industry) + ' \u00b7 ' + esc(s.place) + ' \u00b7 ~' + s.staff + ' staff', '<a class="btn ghost" href="find.html">\u2190 Back to list</a>') +
+    return head(s.name, esc(s.industry) + ' \u00b7 ' + esc(s.place) + (+s.staff > 0 ? ' \u00b7 ~' + s.staff + ' staff' : ''), '<a class="btn ghost" href="find.html">\u2190 Back to list</a>') +
       '<div class="two"><div class="stack"><div class="card"><div class="lbl">Why this sponsor is ranked here</div>' +
-      s.crit.map(function (v, i) { return '<div class="crit"><div class="split"><span>' + CRIT[i] + '</span><span>' + v + '%</span></div><div class="bar"><i style="width:' + v + '%"></i></div></div>'; }).join('') + '</div>' +
+      (s.crit ? s.crit.map(function (v, i) { return '<div class="crit"><div class="split"><span>' + CRIT[i] + '</span><span>' + v + '%</span></div><div class="bar"><i style="width:' + v + '%"></i></div></div>'; }).join('') : '<p class="mute">Not rated yet. Use "Rank with AI" on the Discover page to get a score.</p>') + '</div>' +
       '<div class="note">Every criterion behind the ranking is shown, and you can override any of them.</div>' +
       '<div class="card"><div class="lbl">Company notes</div><p>' + esc(s.notes) + '</p></div></div>' +
       '<div class="card"><div class="split"><div class="lbl">Estimated value</div>' + pill(s.value) + '</div>' +
       '<a class="btn block" href="angle.html?id=' + s.id + '">Approach this sponsor</a>' +
       '<button class="ghost block" onclick="R2R.reclass(\'' + s.id + '\')">Reclassify value</button>' +
-      '<button class="ghost block" onclick="R2R.remove(\'' + s.id + '\')">Not relevant \u2013 remove</button></div></div>';
+      '<button class="ghost block" onclick="R2R.del(\'' + s.id + '\')">Not relevant \u2013 remove</button></div></div>';
   };
 
   function comp() { var c = state.compose; if (!c || c.id !== qs.get('id')) { c = state.compose = { id: qs.get('id'), angle: 'brand', benefits: [0, 1], channel: 'Email', v: 0, text: null }; save(); } return c; }
@@ -113,8 +107,8 @@
   };
 
   function gen(s, c) {
-    var o = { brand: ['we are organising ' + state.event.name + ' on ' + state.event.date + ' in ' + state.event.place + ' and would like to offer ' + s.name + ' strong visibility in front of our visitors.', state.event.name + ' returns on ' + state.event.date + ', and we think ' + s.name + ' would be a great brand to have at the start line.'],
-      community: ['we are a regional event and would love to make ' + s.name + ' part of the community around ' + state.event.name + '.', 'as a local company, ' + s.name + ' is exactly the kind of partner our event in ' + state.event.place + ' is built around.'],
+    var o = { brand: ['we are organising ' + state.event.name + (state.event.date ? ' on ' + state.event.date : '') + (state.event.place ? ' in ' + state.event.place : '') + ' and would like to offer ' + s.name + ' strong visibility in front of our visitors.', state.event.name + ' returns' + (state.event.date ? ' on ' + state.event.date : '') + ', and we think ' + s.name + ' would be a great brand to have at the start line.'],
+      community: ['we are a regional event and would love to make ' + s.name + ' part of the community around ' + state.event.name + '.', 'as a local company, ' + s.name + ' is exactly the kind of partner our event' + (state.event.place ? ' in ' + state.event.place : '') + ' is built around.'],
       tech: ['we are looking for a technical partner such as ' + s.name + ' to help keep our rally cars on the road.', 'we would like to explore a technical partnership between ' + s.name + ' and ' + state.event.name + '.'],
       followup: ['thank you for your interest. As promised, here is a short follow-up on a possible partnership.', 'we wanted to follow up on our earlier message about ' + state.event.name + '.'] }[c.angle][c.v % 2];
     var b = c.benefits.map(function (i) { return '- ' + BEN[i]; }).join('\n');
@@ -122,7 +116,7 @@
   }
   P.draft = function () {
     var s = get(qs.get('id')); if (!s || !state.compose) { location.href = 'find.html'; return ''; } var c = comp(); if (!c.text) { c.text = gen(s, c); save(); }
-    var subj = (c.angle === 'followup' ? 'Re: ' : '') + 'Partnership - ' + state.event.name + ', ' + state.event.date;
+    var subj = (c.angle === 'followup' ? 'Re: ' : '') + 'Partnership - ' + state.event.name + (state.event.date ? ', ' + state.event.date : '');
     var a = ANG.filter(function (x) { return x.k === c.angle; })[0];
     return head('Review draft', esc(s.name) + ' \u00b7 step 2 of 2', '<a class="btn ghost" href="angle.html?id=' + s.id + '">\u2190 Back</a>') +
       '<div class="note">Generated draft \u2013 nothing is sent until you press approve.</div>' +
@@ -134,7 +128,7 @@
       '<button class="block" id="send" disabled onclick="R2R.send(\'' + s.id + '\')">Approve &amp; send</button><button class="ghost block" onclick="R2R.draftSave(\'' + s.id + '\')">Save as draft</button></div></div></div>';
   };
 
-  function card(s) { return '<div class="kcard" draggable="true" ondragstart="R2R.ds(event,\'' + s.id + '\')" onclick="R2R.open(\'' + s.id + '\')"><b>' + esc(s.name) + '</b><small>' + (s.attn ? '\u23F0 ' : '') + esc(s.status === 'suggested' ? s.match + '% match' : s.sub || LABEL[s.status]) + '</small></div>'; }
+  function card(s) { return '<div class="kcard" draggable="true" ondragstart="R2R.ds(event,\'' + s.id + '\')" onclick="R2R.open(\'' + s.id + '\')"><button class="ghost sm" title="Remove" style="float:right;padding:0 8px" onclick="event.stopPropagation();R2R.del(\'' + s.id + '\')">\u2715</button><b>' + esc(s.name) + '</b><small>' + (s.attn ? '\u23F0 ' : '') + esc(s.status === 'suggested' ? (s.match == null ? 'Not rated' : s.match + '% match') : s.sub || LABEL[s.status]) + '</small></div>'; }
   P.pipeline = function () {
     var due = state.sponsors.filter(function (s) { return s.attn; }).length;
     return head('Pipeline', state.sponsors.length + ' sponsors \u00b7 drag to change status', '<a class="btn ghost" href="find.html?add=1">+ Add manually</a>') +
@@ -152,7 +146,7 @@
       '<div class="card" style="margin:12px 0"><div class="lbl">Suggested next action</div><b>' + next[0] + '</b><br><small>Because: ' + next[1] + '</small></div>' +
       '<button class="block" onclick="R2R.accept(\'' + s.id + '\')">Accept &amp; draft it</button>' +
       '<label style="margin-top:12px">Change status myself</label><select onchange="R2R.setStatus(\'' + s.id + '\',this.value)">' + COLS.map(function (k) { return '<option value="' + k + '"' + (k === s.status ? ' selected' : '') + '>' + LABEL[k] + '</option>'; }).join('') + '</select>' +
-      '<button class="ghost block" onclick="R2R.snooze(\'' + s.id + '\')">Snooze reminder</button></div>', true);
+      '<button class="ghost block" onclick="R2R.snooze(\'' + s.id + '\')">Snooze reminder</button><button class="ghost block" onclick="R2R.del(\'' + s.id + '\')">Remove from pipeline</button></div>', true);
   }
   P.messages = function () {
     return head('Messages', state.messages.length + ' drafts and sent messages', '') +
@@ -160,7 +154,7 @@
   };
   P.settings = function () {
     var e = state.event;
-    return head('Settings', 'Event details and sponsor target', '') + '<div class="card" style="max-width:480px"><label>Event name</label><input id="s1" value="' + esc(e.name) + '"><div class="r2"><div><label>Date</label><input id="s2" value="' + esc(e.date) + '"></div><div><label>Place</label><input id="s3" value="' + esc(e.place) + '"></div></div>' +
+    return head('Settings', 'Event details and sponsor target', '') + '<div class="card" style="max-width:480px"><label>Event name</label><input id="s1" value="' + esc(e.name) + '"><div class="r2"><div><label>Date</label><input id="s2" placeholder="Optional" value="' + esc(e.date) + '"></div><div><label>Place</label><input id="s3" placeholder="Optional" value="' + esc(e.place) + '"></div></div>' +
       '<label>Sponsor target</label><input id="s4" type="number" min="1" value="' + state.target + '"><button class="block" onclick="R2R.saveSet()">Save</button><button class="ghost block" onclick="R2R.reset()">Reset sponsor data</button></div>';
   };
 
@@ -177,10 +171,11 @@
     av: function (v) { addVal = v; Array.prototype.forEach.call($('av').children, function (b) { b.className = 'chip' + (b.textContent === v ? ' on' : ''); }); },
     saveAdd: function () {
       var n = $('a1').value.trim(); if (!n) { toast('Company name is required'); return; }
-      var s = sp('c' + Date.now(), n, $('a2').value.trim() || 'Other', $('a3').value.trim() || 'NL', '\u2013', 0, 50, addVal, 'suggested', [50, 50, 50, 50], $('a5').value.trim() || 'Added manually.', $('a4').value.trim());
+      var s = sp('c' + Date.now(), n, $('a2').value.trim() || 'Other', $('a3').value.trim() || 'NL', '\u2013', 0, null, addVal, 'suggested', null, $('a5').value.trim() || 'Added manually.', $('a4').value.trim());
       state.sponsors.push(s); save(); closeM(); toast('Sponsor added'); if (page === 'find') draw(); else location.href = 'find.html';
     },
     close: closeM,
+    del: function (id) { var s = get(id); if (!s || !confirm('Remove ' + s.name + ' from the pipeline? It will also disappear from Find sponsors.')) return; state.sponsors = state.sponsors.filter(function (x) { return x.id !== id; }); save(); closeM(); toast(s.name + ' removed'); draw(); },
     reclass: function (id) { var s = get(id); s.value = { low: 'medium', medium: 'high', high: 'low' }[s.value]; save(); draw(); toast('Value set to ' + s.value); },
     remove: function (id) { var s = get(id); s.status = 'declined'; s.sub = 'Removed by you'; save(); location.href = 'find.html'; },
     angle: function (k) { state.compose.angle = k; save(); draw(); },
@@ -226,14 +221,14 @@
   document.addEventListener('DOMContentLoaded', function () {
     topNav(); var f;
     if ((f = $('signup-form'))) f.addEventListener('submit', function (ev) {
-      ev.preventDefault(); var btn = f.querySelector('button'); btn.disabled = true; $('m').textContent = '';
+      ev.preventDefault(); if (!window.R2R_AUTH) { $('m').textContent = 'auth.js did not load. Check that java/auth.js exists and is linked above java.js in this page.'; return; } var btn = f.querySelector('button'); btn.disabled = true; $('m').textContent = '';
       R2R_AUTH.signup({ name: $('n').value.trim(), email: $('e').value.trim().toLowerCase(), team: $('t').value.trim(), pax: $('p').value, pw: $('pw').value })
         .then(function (r) { if (r.pending) { $('m').textContent = 'Check your inbox to confirm your email, then log in.'; btn.disabled = false; return; } wr(SES, r.email); location.href = 'dashboard.html'; })
         .catch(function (e) { $('m').textContent = e.message; btn.disabled = false; });
     });
     if ((f = $('login-form'))) {
       f.addEventListener('submit', function (ev) {
-        ev.preventDefault(); var btn = f.querySelector('button'); btn.disabled = true; $('m').textContent = '';
+        ev.preventDefault(); if (!window.R2R_AUTH) { $('m').textContent = 'auth.js did not load. Check that java/auth.js exists and is linked above java.js in this page.'; return; } var btn = f.querySelector('button'); btn.disabled = true; $('m').textContent = '';
         R2R_AUTH.login($('e').value.trim().toLowerCase(), $('pw').value)
           .then(function (r) { wr(SES, r.email); location.href = 'dashboard.html'; })
           .catch(function (e) { $('m').textContent = e.message; btn.disabled = false; });

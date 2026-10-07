@@ -127,7 +127,7 @@
     var ev = C.state.event;
     var data = l.map(function (r, i) { return { i: i, name: r.name, type: r.type, category: r.cat, distance_km: Math.round(r.km * 10) / 10, city: r.city, has_website: !!r.web, keyword_hits: r.hits, capacity_seats: r.cap || null }; });
     var prompt = [
-      'You help the organisers of "' + ev.name + '" (' + ev.date + ', ' + ev.place + ', Netherlands), a rally / sports-car event with a relatively affluent audience, find local sponsors.',
+      'You help the organisers of "' + ev.name + '" (' + [ev.date, ev.place, 'Netherlands'].filter(Boolean).join(', ') + '), a rally / sports-car event with a relatively affluent audience, find local sponsors.',
       'Below is a JSON list of REAL businesses from OpenStreetMap near Maastricht. Use ONLY this data. Never invent facts about a company.',
       'Weighting, highest first: (1) automotive and motorsport businesses: dealers, premium/sports/exotic/classic cars, specialists of brands such as Porsche, BMW, Mercedes-AMG, Audi, Ferrari, Lamborghini, McLaren, Aston Martin, detailing, wrapping, PPF, ceramic coating, tuning, wheels, tyres, performance parts, car audio and electronics; (2) businesses that serve affluent car enthusiasts: luxury, watches, jewellery, menswear, eyewear, real estate, wealth management, financial advice, leasing, insurance, business services; (3) hospitality and events: hotels, fine dining, wine, catering, golf, wellness.',
       'Score ordinary petrol stations, supermarkets, snack bars, generic shops and large national chains LOW.',
@@ -161,8 +161,8 @@
       var r = D.results.filter(function (x) { return x.id === id; })[0]; if (!r || st.sponsors.some(function (s) { return s.id === id; })) return;
       var a = D.ai[id];
       var notes = 'Real company from OpenStreetMap.' + (r.addr ? ' Address: ' + r.addr + ' ' + r.city + '.' : '') + (r.phone ? ' Phone: ' + r.phone + '.' : '') + (r.web ? ' Website: ' + r.web + '.' : '') + (r.hits.length ? ' Keywords: ' + r.hits.join(', ') + '.' : '') + (a ? ' AI note: ' + a.reason : '');
-      var s = C.sp(id, r.name, r.cat === 'Other' ? cap(r.type || 'Other') : r.cat, 'Limburg', r.city || 'Maastricht', '?', a ? a.match : Math.min(95, 40 + r.kscore * 5), a ? a.value : 'medium', 'suggested',
-        a && a.crit.length === 4 ? a.crit : [50, 50, 50, 50], notes, r.email || r.web || '(no email found - use website or phone)');
+      var s = C.sp(id, r.name, r.cat === 'Other' ? cap(r.type || 'Other') : r.cat, 'Limburg', r.city || 'Maastricht', '?', a ? a.match : null, a ? a.value : null, 'suggested',
+        a && a.crit.length === 4 ? a.crit : null, notes, r.email || r.web || '(no email found - use website or phone)');
       st.sponsors.push(s); n++;
     });
     C.save(); D.picked = {}; D.msg = n + ' added. Open "Find sponsors" to review and approach them.'; C.draw();
@@ -210,16 +210,16 @@
   function mailText(r, lang) {
     var ev = C.state.event, m = me(), nl = lang === 'nl', rest = r.cat === 'Restaurants (group lunch)', car = r.cat === 'Automotive', n = ev.name, intro, info, pitch, ask;
     var sig = (m.name || '') + (m.team ? '\n' + m.team : '') + (m.email ? '\n' + m.email : '');
-    var subject = 'Sponsorship ' + n + ' (' + ev.date + ', ' + ev.place + ')';
+    var det = [ev.date, ev.place].filter(Boolean).join(', '), subject = 'Sponsorship ' + n + (det ? ' (' + det + ')' : '');
     if (nl) {
-      intro = 'Mijn naam is ' + (m.name || '[naam]') + (m.team ? ' van team ' + m.team : '') + '. Wij organiseren ' + n + ' op ' + ev.date + ' in ' + ev.place + ', een rally waarvoor wij lokale partners zoeken.';
+      intro = 'Mijn naam is ' + (m.name || '[naam]') + (m.team ? ' van team ' + m.team : '') + '. Wij organiseren ' + n + (ev.date ? ' op ' + ev.date : '') + (ev.place ? ' in ' + ev.place : '') + ', een rally waarvoor wij lokale partners zoeken.';
       info = 'Wij kwamen ' + r.name + (r.city ? ' in ' + r.city : '') + (r.type ? ' (' + r.type + ')' : '') + ' tegen en denken dat een samenwerking goed zou passen.';
       pitch = rest ? 'Wij zoeken een restaurant waar een groep van 100 personen of meer gezamenlijk kan lunchen en horen graag of dat bij u mogelijk is. Daarnaast zijn wij geïnteresseerd in een sponsorship met u voor ' + n + ', bijvoorbeeld met ' + BEN_NL + '.'
         : 'Wij zijn geïnteresseerd in een sponsorship met u voor ' + n + (car ? '. Een bedrijf uit de autowereld past goed bij een rally; denk aan ' + BEN_NL + ', of een technische samenwerking (onderhoud, onderdelen, banden).' : ', bijvoorbeeld met ' + BEN_NL + '.');
       ask = 'Wij komen graag met u in contact, op de manier die u het prettigst vindt: persoonlijk, telefonisch of per e-mail. Staat u hiervoor open? Laat ons gerust weten met wie wij kunnen spreken en hoe wij die persoon bereiken.';
       return { subject: subject, body: 'Beste team van ' + r.name + ',\n\n' + intro + '\n\n' + info + ' ' + pitch + '\n\n' + ask + '\n\nMet vriendelijke groet,\n' + sig };
     }
-    intro = 'My name is ' + (m.name || '[name]') + (m.team ? ' from team ' + m.team : '') + '. We are organising ' + n + ' on ' + ev.date + ' in ' + ev.place + ', a rally for which we are looking for local partners.';
+    intro = 'My name is ' + (m.name || '[name]') + (m.team ? ' from team ' + m.team : '') + '. We are organising ' + n + (ev.date ? ' on ' + ev.date : '') + (ev.place ? ' in ' + ev.place : '') + ', a rally for which we are looking for local partners.';
     info = 'We came across ' + r.name + (r.city ? ' in ' + r.city : '') + (r.type ? ' (' + r.type + ')' : '') + ' and think a partnership could be a good fit.';
     pitch = rest ? 'We are looking for a restaurant where a group of 100 or more people can have lunch together, and we would love to hear whether you could host us. We are also interested in a sponsorship with you for ' + n + ', for example with ' + BEN_EN + '.'
       : 'We are interested in a sponsorship with you for ' + n + (car ? '. A business from the automotive world suits a rally well; think of ' + BEN_EN + ', or a technical partnership (service, parts, tyres).' : ', for example with ' + BEN_EN + '.');
