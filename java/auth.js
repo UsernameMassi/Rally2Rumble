@@ -4,8 +4,8 @@
    so accounts live on a server and work on any device. */
 (function () {
   'use strict';
-  var SUPABASE_URL = '';   // e.g. https://abcd1234.supabase.co
-  var SUPABASE_KEY = '';   // the project's public "anon" key
+  var SUPABASE_URL = 'https://xhfckfrekbvhjsqftwcb.supabase.co/rest/v1/';   // e.g. https://abcd1234.supabase.co
+  var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhoZmNrZnJla2J2aGpzcWZ0d2NiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEzOTk1MTQsImV4cCI6MjEwNjk3NTUxNH0.7DPiNjLy5c01xQ2Y7YpWUpBlgXfQX5RAU5ygEL_YQ8c';   // the project's public "anon" key
   var USR = 'r2r_users', remote = !!(SUPABASE_URL && SUPABASE_KEY);
   function rd() { try { return JSON.parse(localStorage.getItem(USR)) || {}; } catch (e) { return {}; } }
   function wr(v) { localStorage.setItem(USR, JSON.stringify(v)); }
