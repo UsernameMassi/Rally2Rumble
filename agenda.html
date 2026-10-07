@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agenda | Rally2Rumble</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Michroma&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/theme.css">
+<link rel="stylesheet" href="css/info.css">
+<script src="java/theme.js"></script>
+</head>
+<body>
+<div class="stripe"></div>
+<header><a class="brand" href="index.html">Rally<b>2</b>Rumble</a>
+<nav class="nav2"><a href="index.html">Info</a><a href="route.html">Route</a><a href="agenda.html" class="on">Agenda</a></nav>
+<div class="row" id="nav"></div></header>
+<main>
+<div class="page-top"><h1>Agenda</h1><div class="row noprint"><button type="button" data-pdf="agenda">Download agenda PDF</button></div></div>
+<p class="lead">The plan for the day, from check-in to prize giving.</p>
+<ol class="list" id="r-agenda" style="margin-top:20px"></ol>
+<div class="note" style="margin-top:24px" id="r-agendanote"></div>
+</main>
+<script src="java/rally-data.js"></script>
+<script src="java/rally.js"></script>
+<script src="java/java.js"></script>
+</body>
+</html>

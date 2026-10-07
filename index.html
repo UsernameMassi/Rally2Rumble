@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Michroma&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="css/theme.css">
+<link rel="stylesheet" href="css/info.css">
 <script src="java/theme.js"></script>
 <style>
 .hero{position:relative;padding:72px 0 56px;overflow:hidden}
@@ -32,7 +33,9 @@
 </head>
 <body>
 <div class="stripe"></div>
-<header><a class="brand" href="index.html">Rally<b>2</b>Rumble</a><div class="row" id="nav"></div></header>
+<header><a class="brand" href="index.html">Rally<b>2</b>Rumble</a>
+<nav class="nav2"><a href="index.html" class="on">Info</a><a href="route.html">Route</a><a href="agenda.html">Agenda</a></nav>
+<div class="row" id="nav"></div></header>
 <main>
 <section class="hero">
   <svg class="route" viewBox="0 0 600 360" aria-hidden="true"><path d="M10 330 C120 330 130 180 230 200 S330 330 400 230 S470 60 590 40"/><circle cx="10" cy="330" r="4"/><circle cx="590" cy="40" r="4"/></svg>
@@ -40,6 +43,19 @@
   <p>Register your team, lock in your spot and follow every stage from one dashboard.</p>
   <div class="row"><a class="btn" id="cta1" href="signup.html">Join the rally</a><a class="btn ghost" id="cta2" href="login.html">I have an account</a></div>
 </section>
+
+
+<h2 class="section-title" id="about" style="font-size:22px">About the rally</h2>
+<p class="lead" id="r-intro"></p>
+<div class="facts" id="r-facts"></div>
+
+<h2 class="section-title" style="font-size:22px">Route &amp; agenda <a class="btn ghost sm" id="editlink" href="manage.html" style="display:none;margin-left:12px">Edit details</a></h2>
+<div class="dl">
+  <div class="card"><h3>The route</h3><p>All stages from start to finish, with distances and stops.</p>
+    <div class="row"><a class="btn sm" href="route.html">View route</a><button class="ghost sm" data-pdf="route">Download PDF</button></div></div>
+  <div class="card"><h3>Agenda for the day</h3><p>Check-in, briefing, start, stops and finish, hour by hour.</p>
+    <div class="row"><a class="btn sm" href="agenda.html">View agenda</a><button class="ghost sm" data-pdf="agenda">Download PDF</button></div></div>
+</div>
 
 <h2 class="section-title" style="font-size:22px">Your route to the start line</h2>
 <ol class="steps" id="steps">
@@ -49,6 +65,8 @@
 </ol>
 <div class="cta"><a class="btn" id="cta3" href="signup.html">Start with step 1</a></div>
 </main>
+<script src="java/rally-data.js"></script>
+<script src="java/rally.js"></script>
 <script src="java/java.js"></script>
 <script>
 (function () {
@@ -65,6 +83,7 @@
     document.getElementById('cta1').textContent = member ? 'Open dashboard' : 'Join the rally';
     document.getElementById('cta1').href = member ? 'dashboard.html' : 'signup.html';
     document.getElementById('cta2').style.display = 'none';
+    if (member) document.getElementById('editlink').style.display = 'inline-block';
   }
 })();
 </script>

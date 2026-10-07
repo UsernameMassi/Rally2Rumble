@@ -205,9 +205,9 @@
 
   /* ---------- shell, auth, start ---------- */
   function shell() {
-    var nav = [['dashboard', 'Dashboard'], ['find', 'Find sponsors'], ['discover', 'Discover companies'], ['pipeline', 'Pipeline'], ['messages', 'Messages'], ['settings', 'Settings']];
+    var nav = [['dashboard', 'Dashboard'], ['find', 'Find sponsors'], ['discover', 'Discover companies'], ['pipeline', 'Pipeline'], ['messages', 'Messages'], ['manage', 'Rally details'], ['settings', 'Settings']];
     var on = { dashboard: 'dashboard', find: 'find', discover: 'discover', sponsor: 'find', angle: 'find', draft: 'messages', pipeline: 'pipeline', messages: 'messages', settings: 'settings' }[page];
-    $('side').innerHTML = '<a class="brand" href="index.html">Rally<b>2</b>Rumble</a><div class="evt"><b>' + esc(state.event.name) + '</b><small id="clk"></small></div><nav class="nav">' +
+    $('side').innerHTML = '<a class="brand" href="index.html" aria-label="Rally to Rumble home"><span class="logo" role="img" aria-label="Rally to Rumble"></span></a><div class="evt"><b>' + esc(state.event.name) + '</b><small id="clk"></small></div><nav class="nav">' +
       nav.map(function (n) { return '<a href="' + n[0] + '.html" class="' + (n[0] === on ? 'on' : '') + '">' + n[1] + '</a>'; }).join('') + '</nav><div class="who"><span>' + esc(user().name) + '</span><button class="ghost sm" onclick="R2R.out()">Log out</button></div>';
   }
   function tick() {
@@ -218,8 +218,22 @@
     var n = $('nav'); if (!n) return;
     n.innerHTML = rd(SES, null) ? '<a class="btn ghost" href="dashboard.html">Dashboard</a><button class="ghost" onclick="R2R.out()">Log out</button>' : '<a class="btn ghost" href="login.html">Log in</a><a class="btn" href="signup.html">Sign up</a>';
   }
+  /* logo + favicon: applied at runtime so the HTML pages need no edits */
+  function branding() {
+    var L = '<span class="logo" role="img" aria-label="Rally to Rumble"></span>';
+    Array.prototype.forEach.call(document.querySelectorAll('header .brand'), function (a) {
+      if (!a.querySelector('.logo')) { a.innerHTML = L; a.setAttribute('aria-label', 'Rally to Rumble home'); }
+    });
+    var ph = document.querySelector('.logo-ph');
+    if (ph) ph.outerHTML = '<span class="logo lg" role="img" aria-label="Rally to Rumble"></span>';
+    if (!document.querySelector('link[rel~="icon"]')) {
+      [['icon', 'assets/favicon.svg', 'image/svg+xml'], ['icon', 'assets/favicon.ico', ''], ['apple-touch-icon', 'assets/apple-touch-icon.png', '']].forEach(function (x) {
+        var l = document.createElement('link'); l.rel = x[0]; l.href = x[1]; if (x[2]) l.type = x[2]; else if (x[0] === 'icon') l.setAttribute('sizes', 'any'); document.head.appendChild(l);
+      });
+    }
+  }
   document.addEventListener('DOMContentLoaded', function () {
-    topNav(); var f;
+    branding(); topNav(); var f;
     if ((f = $('signup-form'))) f.addEventListener('submit', function (ev) {
       ev.preventDefault(); if (!window.R2R_AUTH) { $('m').textContent = 'auth.js did not load. Check that java/auth.js exists and is linked above java.js in this page.'; return; } var btn = f.querySelector('button'); btn.disabled = true; $('m').textContent = '';
       R2R_AUTH.signup({ name: $('n').value.trim(), email: $('e').value.trim().toLowerCase(), team: $('t').value.trim(), pax: $('p').value, pw: $('pw').value })

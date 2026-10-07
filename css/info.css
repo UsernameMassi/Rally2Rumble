@@ -1,0 +1,42 @@
+/* Rally info pages - uses tokens from style.css / theme.css */
+.nav2{display:flex;gap:18px;flex-wrap:wrap;align-items:center}
+.nav2 a{color:var(--ink);text-decoration:none;font-size:13px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;padding:4px 0;border-bottom:1px solid transparent}
+.nav2 a:hover,.nav2 a.on{border-bottom-color:var(--ink)}
+header{flex-wrap:wrap;gap:12px}
+.lead{font-size:18px;max-width:640px;color:var(--mute)}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin:20px 0 8px}
+.fact{background:var(--panel);border:1px solid var(--line);padding:16px}
+.fact span{display:block;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);margin-bottom:6px}
+.fact b{font-size:20px}
+.dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px}
+.dl .card{display:flex;flex-direction:column;gap:12px}
+.dl .card p{margin:0;color:var(--mute)}
+.dl .row{margin-top:auto}
+.list{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.list li{display:grid;grid-template-columns:110px 1fr auto;gap:16px;align-items:baseline;padding:18px 0;border-bottom:1px solid var(--line)}
+.list .t{font:400 15px var(--display);color:var(--ink);white-space:nowrap}
+.list h3{font-size:20px;margin-bottom:4px}.list p{margin:0;color:var(--mute)}
+.list .meta{font-size:14px;color:var(--mute);white-space:nowrap}
+.mapbox{background:var(--panel);border:1px solid var(--line);padding:12px;margin:20px 0}
+.mapbox svg{width:100%;height:auto;display:block}
+.mapbox path{fill:none;stroke:var(--ink);stroke-width:1.5}
+.mapbox circle{fill:var(--bg);stroke:var(--ink);stroke-width:1.5}
+.mapbox text{fill:var(--ink);font:700 12px 'Space Grotesk',sans-serif}
+.page-top{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;padding:40px 0 8px}
+.page-top h1{font:400 clamp(26px,5vw,52px)/1.15 var(--display)}
+@media(max-width:600px){.list li{grid-template-columns:1fr;gap:4px}}
+@media print{.stripe,header,.themebtn,.noprint{display:none!important}}
+.ed{display:grid;gap:8px;align-items:center;margin-bottom:8px}
+.ed .sm{padding:8px 10px;min-width:36px}
+.fact input{margin-top:2px}
+code{background:var(--panel);padding:1px 6px}
+@media(max-width:700px){.ed{grid-template-columns:1fr!important}}
+
+.rowed{display:grid;gap:8px;align-items:center}
+.rowed.e-route{grid-template-columns:1fr 2fr 110px auto}
+.rowed.e-agenda{grid-template-columns:90px 1fr 2fr auto}
+.rowed .mv{display:flex;gap:4px}
+.rowed .mv button{padding:6px 10px}
+.stack{margin-bottom:12px}
+code{background:var(--panel);padding:1px 6px;border:1px solid var(--line)}
+@media(max-width:720px){.rowed.e-route,.rowed.e-agenda{grid-template-columns:1fr;padding-bottom:12px;border-bottom:1px solid var(--line)}}
