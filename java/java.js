@@ -2,6 +2,7 @@
 (function () {
   'use strict';
   var KEY = 'r2r_state', SES = 'r2r_session', USR = 'r2r_users';
+  var LOCK_INFO = false; /* true = the Route and Agenda pages also need a login (the home page, sign up and log in stay public) */
   function rd(k, d) { try { var v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } }
   function wr(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
   function $(i) { return document.getElementById(i); }
@@ -49,7 +50,7 @@
   function toast(t) { var d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(function () { d.remove(); }, 2200); }
   function modal(html, side) { closeM(); var d = document.createElement('div'); d.id = 'ov'; d.className = 'overlay' + (side ? ' side' : ''); d.onclick = function (e) { if (e.target === d) closeM(); }; d.innerHTML = html; document.body.appendChild(d); }
   function closeM() { var d = $('ov'); if (d) d.remove(); }
-  function user() { var s = rd(SES, null); if (!s) return null; if (s === 'guest') return { name: 'Guest' }; return rd(USR, {})[s] || { name: s }; }
+  function user() { var s = rd(SES, null); if (!s) return null; return rd(USR, {})[s] || { name: s }; }
   function draw() { $('view').innerHTML = P[page](); }
 
   /* ---------- pages ---------- */
@@ -233,6 +234,8 @@
     }
   }
   document.addEventListener('DOMContentLoaded', function () {
+    if (rd(SES, null) === 'guest') wr(SES, null); /* guest access was removed: end any old guest session */
+    if (LOCK_INFO && /\/(route|agenda)(\.html)?$/.test(location.pathname) && !rd(SES, null)) { location.href = 'login.html'; return; }
     branding(); topNav(); var f;
     if ((f = $('signup-form'))) f.addEventListener('submit', function (ev) {
       ev.preventDefault(); if (!window.R2R_AUTH) { $('m').textContent = 'auth.js did not load. Check that java/auth.js exists and is linked above java.js in this page.'; return; } var btn = f.querySelector('button'); btn.disabled = true; $('m').textContent = '';
@@ -247,7 +250,6 @@
           .then(function (r) { wr(SES, r.email); location.href = 'dashboard.html'; })
           .catch(function (e) { $('m').textContent = e.message; btn.disabled = false; });
       });
-      $('guest').onclick = function () { wr(SES, 'guest'); location.href = 'dashboard.html'; };
     }
     if (APP.indexOf(page) > -1) {
       if (!rd(SES, null)) { location.href = 'login.html'; return; }
