@@ -72,11 +72,37 @@
 <script src="java/java.js"></script>
 <script>
 (function () {
-  var ALL = (window.GALLERY || []).map(function (p) {
-    p.src = 'photos/' + p.file;
+  function prep(p) {
+    p.src = 'photos/' + p.file.split('/').map(encodeURIComponent).join('/');
     p.thumbSrc = p.thumb || p.src;
     return p;
-  });
+  }
+  var ALL = (window.GALLERY || []).map(prep);
+  var IMG = /\.(jpe?g|jfif|png|webp|gif|avif)$/i;
+
+  /* Fallback: if gallery-data.js has no photos, try reading the folder listing
+     (works on VS Code Live Server / most local servers, not on every host). */
+  function discover() {
+    var dirs = [['photographer', 'photographer', 'Photographer'], ['guests', 'guest', 'Guest']], found = [], seen = {};
+    $('status').textContent = 'Looking for photos…';
+    Promise.all(dirs.map(function (d) {
+      return fetch('photos/' + d[0] + '/').then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+        .then(function (t) {
+          var doc = new DOMParser().parseFromString(t, 'text/html');
+          Array.prototype.forEach.call(doc.querySelectorAll('a[href]'), function (a) {
+            var n = a.getAttribute('href').split('?')[0].split('/').filter(Boolean).pop() || '';
+            try { n = decodeURIComponent(n); } catch (e) {}
+            var key = d[0] + '/' + n;
+            if (IMG.test(n) && !seen[key]) { seen[key] = 1; found.push({ file: key, by: d[2], type: d[1], caption: '' }); }
+          });
+        }).catch(function () {});
+    })).then(function () {
+      $('status').textContent = '';
+      if (!found.length) return;
+      found.sort(function (x, y) { return x.file.localeCompare(y.file, undefined, { numeric: true }); });
+      ALL = found.map(prep); chips(); render();
+    });
+  }
   var filter = 'all', shown = [], cur = 0;
   var $ = function (i) { return document.getElementById(i); };
 
@@ -106,12 +132,29 @@
     });
     var g = $('grid'); g.innerHTML = '';
     $('empty').style.display = ALL.length ? 'none' : 'block';
+    if (!ALL.length) {
+      var local = /^(localhost|127\.0\.0\.1|)$/.test(location.hostname);
+      var missing = typeof window.GALLERY === 'undefined';
+      $('empty').textContent = 'No photos yet. Check back soon.';
+      if (local) {
+        var hint = document.createElement('div'); hint.style.cssText = 'margin-top:10px;font-size:13px';
+        hint.textContent = missing
+          ? 'Dev hint: java/gallery-data.js was not found. Run "node generate-gallery.js" in the main folder.'
+          : 'Dev hint: java/gallery-data.js exists but has no photos. Run "node generate-gallery.js" again and check its output.';
+        $('empty').appendChild(hint);
+      }
+      console.warn('[gallery]', missing ? 'java/gallery-data.js not loaded' : 'GALLERY list is empty');
+    }
     $('dlall').disabled = !ALL.length;
     shown.forEach(function (p, i) {
       var d = document.createElement('div'); d.className = 'g-item';
       var img = document.createElement('img');
       img.src = p.thumbSrc; img.loading = 'lazy'; img.alt = p.caption || ('Photo by ' + (p.by || 'unknown'));
       img.onclick = function () { open(i); };
+      img.onerror = function () {
+        console.warn('[gallery] image not found:', p.thumbSrc);
+        $('status').textContent = 'Some photos could not be loaded. Check that photos/ sits next to gallery.html and the file names match.';
+      };
       var m = document.createElement('div'); m.className = 'g-meta';
       var t = document.createElement('div');
       t.innerHTML = '<span></span><small></small>';
@@ -178,6 +221,7 @@
   };
 
   chips(); render();
+  if (!ALL.length) discover();
 })();
 </script>
 </body>

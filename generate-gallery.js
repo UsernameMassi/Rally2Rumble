@@ -10,7 +10,7 @@ const path = require('path');
 
 const root = path.join(__dirname, 'photos');
 const out = path.join(__dirname, 'java', 'gallery-data.js');
-const isImg = /\.(jpe?g|png|webp|gif)$/i;
+const isImg = /\.(jpe?g|jfif|png|webp|gif|avif)$/i;
 
 const groups = [
   { dir: 'photographer', type: 'photographer', by: 'Photographer' },
@@ -18,20 +18,25 @@ const groups = [
   { dir: '', type: 'guest', by: 'Guest' }
 ];
 
+console.log('Script folder : ' + __dirname);
+console.log('Looking in    : ' + root + '\n');
+
 const list = [];
 groups.forEach(g => {
   const full = path.join(root, g.dir);
   if (!fs.existsSync(full)) fs.mkdirSync(full, { recursive: true });
-  fs.readdirSync(full, { withFileTypes: true })
-    .filter(f => f.isFile() && isImg.test(f.name))
-    .map(f => f.name)
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-    .forEach(name => list.push({
-      file: g.dir ? g.dir + '/' + name : name,
-      by: g.by,
-      type: g.type,
-      caption: ''
-    }));
+  const files = fs.readdirSync(full, { withFileTypes: true }).filter(f => f.isFile());
+  const good = files.map(f => f.name).filter(n => isImg.test(n))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const skipped = files.map(f => f.name).filter(n => !isImg.test(n));
+  console.log('photos/' + (g.dir || '(loose files)') + ' -> ' + good.length + ' photo(s)');
+  skipped.forEach(n => console.log('   skipped (not a web image): ' + n));
+  good.forEach(name => list.push({
+    file: g.dir ? g.dir + '/' + name : name,
+    by: g.by,
+    type: g.type,
+    caption: ''
+  }));
 });
 
 const text =
@@ -40,4 +45,5 @@ const text =
 
 fs.mkdirSync(path.dirname(out), { recursive: true });
 fs.writeFileSync(out, text);
-console.log('Done. ' + list.length + ' photo(s) added to java/gallery-data.js');
+console.log('\nDone. ' + list.length + ' photo(s) written to ' + out);
+if (!list.length) console.log('Nothing found. Check that the photos are in the folder shown on the "Looking in" line above.');
