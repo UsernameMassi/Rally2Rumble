@@ -103,7 +103,7 @@
   function $(i) { return document.getElementById(i); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   var qs = new URLSearchParams(location.search), page = document.body.getAttribute('data-page');
-  var APP = ['dashboard', 'find', 'sponsor', 'angle', 'draft', 'pipeline', 'messages', 'settings', 'discover', 'admin'];
+  var APP = ['dashboard', 'find', 'sponsor', 'angle', 'draft', 'pipeline', 'messages', 'settings', 'discover', 'admin', 'manage'];
   var LABEL = { suggested: 'Suggested', approached: 'Approached', conversation: 'In conversation', confirmed: 'Confirmed', declined: 'Declined' };
   var COLS = ['suggested', 'approached', 'conversation', 'confirmed', 'declined'];
   var VAL = { low: 1, medium: 2, high: 3 };
@@ -160,7 +160,8 @@
       '<div class="two"><div><div class="lbl">Needs your attention</div>' +
       (attn.map(function (s) { return '<a class="item" href="pipeline.html?open=' + s.id + '"><div><b>' + esc(s.name) + '</b><small>' + esc(s.sub) + '</small></div><span class="pill ' + (s.attn === 'due' ? 'dark' : 'hi') + '">' + (s.attn === 'due' ? 'Due' : 'Replied') + '</span></a>'; }).join('') || '<p class="mute">Nothing needs you right now.</p>') +
       '</div><div class="card"><div class="lbl">Sponsor target</div><div class="split"><small>' + c.confirmed + ' of ' + t + ' confirmed</small><small>' + pct + '%</small></div><div class="bar"><i style="width:' + pct + '%"></i></div>' +
-      '<a class="btn ghost block" href="pipeline.html">Open pipeline</a><a class="btn ghost block" href="find.html?add=1">Add sponsor manually</a></div></div>';
+      '<a class="btn ghost block" href="pipeline.html">Open pipeline</a><a class="btn ghost block" href="find.html?add=1">Add sponsor manually</a>' +
+      (SYNC.admin ? '<div class="lbl" style="margin-top:16px">Admin</div><a class="btn ghost block" href="manage.html">Edit rally details</a><a class="btn ghost block" href="admin.html">All users\' lists</a>' : '') + '</div></div>';
   };
 
   function chip(g, v, cur) { return '<button class="chip' + (v === cur ? ' on' : '') + '" onclick="R2R.f(\'' + g + '\',\'' + v + '\')">' + v + '</button>'; }
@@ -308,8 +309,8 @@
 
   /* ---------- shell, auth, start ---------- */
   function shell() {
-    var nav = [['dashboard', 'Dashboard'], ['find', 'Find sponsors'], ['discover', 'Discover companies'], ['pipeline', 'Pipeline'], ['messages', 'Messages'], ['manage', 'Rally details'], ['settings', 'Settings']]; if (SYNC.admin) nav.push(['admin', 'Admin']);
-    var on = { dashboard: 'dashboard', find: 'find', discover: 'discover', sponsor: 'find', angle: 'find', draft: 'messages', pipeline: 'pipeline', messages: 'messages', settings: 'settings', admin: 'admin' }[page];
+    var nav = [['dashboard', 'Dashboard'], ['find', 'Find sponsors'], ['discover', 'Discover companies'], ['pipeline', 'Pipeline'], ['messages', 'Messages'], ['settings', 'Settings']]; if (SYNC.admin) { nav.splice(5, 0, ['manage', 'Rally details']); nav.push(['admin', 'Admin']); }
+    var on = { dashboard: 'dashboard', find: 'find', discover: 'discover', sponsor: 'find', angle: 'find', draft: 'messages', pipeline: 'pipeline', messages: 'messages', settings: 'settings', admin: 'admin', manage: 'manage' }[page];
     $('side').innerHTML = '<a class="brand" href="index.html" aria-label="Rally to Rumble home"><span class="logo" role="img" aria-label="Rally to Rumble"></span></a><div class="evt"><b>' + esc(state.event.name) + '</b><small id="clk"></small></div><nav class="nav">' +
       nav.map(function (n) { return '<a href="' + n[0] + '.html" class="' + (n[0] === on ? 'on' : '') + '">' + n[1] + '</a>'; }).join('') + '</nav><div class="who"><span>' + esc(user().name) + '</span><button class="ghost sm" onclick="R2R.out()">Log out</button></div>';
   }

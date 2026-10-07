@@ -3,81 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Manage rally | Rally2Rumble</title>
+<title>Rally details | Rally2Rumble</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Michroma&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="css/theme.css">
-<link rel="stylesheet" href="css/info.css">
 <script src="java/theme.js"></script>
+<style>
+.rowed{display:grid;gap:8px;align-items:center}
+.rowed.e-route{grid-template-columns:1fr 2fr 110px auto}
+.rowed.e-agenda{grid-template-columns:90px 1fr 2fr auto}
+.mv{display:flex;gap:4px}
+@media(max-width:820px){.rowed.e-route,.rowed.e-agenda{grid-template-columns:1fr}}
+</style>
 </head>
-<body>
+<body data-page="manage">
 <div class="stripe"></div>
-<header><a class="brand" href="index.html">Rally<b>2</b>Rumble</a>
-<nav class="nav2"><a href="index.html">Info</a><a href="route.html">Route</a><a href="agenda.html">Agenda</a><a href="gallery.html">Photos</a></nav>
-<div class="row" id="nav"></div></header>
-<main>
-<div class="page-top"><h1>Manage rally</h1></div>
-<div id="gate" class="note" style="display:none">Please <a class="link" href="login.html">log in</a> to edit the rally details.</div>
-<div id="ed" style="display:none">
-<p class="lead">Change the info, route and agenda here. Saving updates the Info, Route and Agenda pages and both PDFs.</p>
-
-<h2 class="section-title" style="font-size:22px">Rally info</h2>
-<label for="i-intro">Intro text</label><textarea class="s" id="i-intro"></textarea>
-<div class="r2"><div><label for="i-date">Date</label><input id="i-date"></div><div><label for="i-location">Start location</label><input id="i-location"></div></div>
-<div class="r2"><div><label for="i-format">Format</label><input id="i-format"></div><div><label for="i-teams">Teams</label><input id="i-teams"></div></div>
-
-<h2 class="section-title" style="font-size:22px">Route stops</h2>
-<div id="e-route" class="stack"></div>
-<button type="button" class="ghost sm" id="add-stop">+ Add stop</button>
-<label for="i-rnote">Note under the route</label><input id="i-rnote">
-
-<h2 class="section-title" style="font-size:22px">Agenda</h2>
-<div id="e-agenda" class="stack"></div>
-<button type="button" class="ghost sm" id="add-item">+ Add agenda item</button>
-<label for="i-anote">Note under the agenda</label><input id="i-anote">
-
-<div class="row" style="margin-top:28px"><button type="button" id="save">Save changes</button><button type="button" class="ghost" id="reset">Reset to published</button></div>
-
-<div class="note" style="margin-top:24px"><b>Visible to others?</b> Saved changes are stored in this browser only. To publish them to every visitor, download the data file and replace <code>java/rally-data.js</code> on your site.
-<div class="row" style="margin-top:10px"><button type="button" class="ghost sm" id="dl">Download data file</button></div></div>
-</div>
-</main>
-<div class="toast" id="toast" style="display:none"></div>
+<div class="app"><aside id="side"></aside><main id="view"></main></div>
 <script src="java/rally-data.js"></script>
 <script src="java/rally.js"></script>
-<script>
-(function(){
-var R=window.RALLY,$=function(i){return document.getElementById(i)};
-if(!R.isMember()){$('gate').style.display='block';return}
-$('ed').style.display='block';
-var d=R.get();
-var F={'i-intro':['info','intro'],'i-date':['info','date'],'i-location':['info','location'],'i-format':['info','format'],'i-teams':['info','teams'],'i-rnote':['route','note'],'i-anote':['agenda','note']};
-function fill(){Object.keys(F).forEach(function(k){$(k).value=d[F[k][0]][F[k][1]]||''})}
-Object.keys(F).forEach(function(k){$(k).addEventListener('input',function(){d[F[k][0]][F[k][1]]=$(k).value})});
-function toast(m){var t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(function(){t.style.display='none'},2200)}
-function rows(box,arr,fields,labels){
-  var el=$(box);el.innerHTML='';
-  arr.forEach(function(o,i){
-    var r=document.createElement('div');r.className='rowed '+box;
-    fields.forEach(function(f,j){var inp=document.createElement('input');inp.value=o[f]||'';inp.setAttribute('aria-label',labels[j]);inp.placeholder=labels[j];inp.addEventListener('input',function(){o[f]=inp.value});r.appendChild(inp)});
-    var b=document.createElement('div');b.className='mv';
-    [['\u2191',-1,'Move up'],['\u2193',1,'Move down'],['\u2715',0,'Remove']].forEach(function(x){
-      var bt=document.createElement('button');bt.type='button';bt.className='ghost sm';bt.textContent=x[0];bt.title=x[2];bt.setAttribute('aria-label',x[2]);
-      bt.addEventListener('click',function(){
-        if(x[1]===0){arr.splice(i,1)}else{var j=i+x[1];if(j<0||j>=arr.length)return;var t=arr[i];arr[i]=arr[j];arr[j]=t}
-        draw()});
-      b.appendChild(bt)});
-    r.appendChild(b);el.appendChild(r)})}
-function draw(){rows('e-route',d.route.stages,['name','desc','dist'],['Name','Description','Distance']);rows('e-agenda',d.agenda.items,['time','title','desc'],['Time','Title','Description'])}
-$('add-stop').onclick=function(){d.route.stages.push({name:'New stop',desc:'',dist:''});draw()};
-$('add-item').onclick=function(){d.agenda.items.push({time:'',title:'New item',desc:''});draw()};
-$('save').onclick=function(){toast(R.save(d)?'Saved. Pages and PDFs are updated.':'Could not save in this browser.')};
-$('reset').onclick=function(){if(!confirm('Discard saved changes and go back to the published details?'))return;R.reset();d=R.get();fill();draw();toast('Reset to published details')};
-$('dl').onclick=function(){R.fileDownload('rally-data.js',new TextEncoder().encode(R.dataFileText(d)),'text/javascript')};
-fill();draw();
-})();
-</script>
 <script src="java/java.js"></script>
+<script src="java/manage.js"></script>
 </body>
 </html>

@@ -83,7 +83,8 @@
     document.getElementById('cta1').textContent = member ? 'Open dashboard' : 'Join the rally';
     document.getElementById('cta1').href = member ? 'dashboard.html' : 'signup.html';
     document.getElementById('cta2').style.display = 'none';
-    if (member) document.getElementById('editlink').style.display = 'inline-block';
+    var adm = false; try { adm = JSON.parse(localStorage.getItem('r2r_isadmin')) === true; } catch (e) {}
+    if (member && adm) document.getElementById('editlink').style.display = 'inline-block';   /* admins only */
   }
 })();
 </script>
