@@ -5,10 +5,105 @@
   var LOCK_INFO = false; /* true = the Route and Agenda pages also need a login (the home page, sign up and log in stay public) */
   function rd(k, d) { try { var v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } }
   function wr(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+
+  /* ---------- cloud sync (Supabase) ----------
+     Active only for Supabase accounts (auth.js stores the login token in 'r2r_sb').
+     The whole sponsor list is saved as one row per user (table user_state). Admins can read and edit every row.
+     Conflicts use a version number: if somebody else (for example an admin) changed your data, their version wins and your
+     last local copy is kept in localStorage under 'r2r_state_backup'. */
+  var SBK = 'r2r_sb', OWN = 'r2r_owner', VER = 'r2r_ver', DIRTY = 'r2r_dirty', BAK = 'r2r_state_backup';
+  var SB = {
+    s: function () { return rd(SBK, null); },
+    on: function () { var s = SB.s(); return !!(s && s.url && s.key && s.access && s.uid); },
+    token: function () {
+      var s = SB.s(); if (!s) return Promise.reject(new Error('not signed in'));
+      if (s.exp - 60 > Date.now() / 1000) return Promise.resolve(s.access);
+      return fetch(s.url + '/auth/v1/token?grant_type=refresh_token', { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: s.key }, body: JSON.stringify({ refresh_token: s.refresh }) })
+        .then(function (r) { return r.json().then(function (j) {
+          if (!r.ok || !j.access_token) throw new Error('session expired, please log in again');
+          s.access = j.access_token; s.refresh = j.refresh_token || s.refresh; s.exp = j.expires_at || Math.floor(Date.now() / 1000) + (j.expires_in || 3600); wr(SBK, s); return s.access;
+        }); });
+    },
+    req: function (method, path, body, extra, keep) {
+      var s = SB.s();
+      return SB.token().then(function (t) {
+        var h = { apikey: s.key, Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' };
+        if (extra) Object.keys(extra).forEach(function (k) { h[k] = extra[k]; });
+        return fetch(s.url + path, { method: method, headers: h, body: body == null ? undefined : JSON.stringify(body), keepalive: !!keep });
+      });
+    },
+    json: function (method, path, body, extra) {
+      return SB.req(method, path, body, extra).then(function (r) { return r.text().then(function (t) {
+        var j = null; try { j = t ? JSON.parse(t) : null; } catch (e) {}
+        if (!r.ok) throw new Error((j && (j.message || j.error_description)) || ('HTTP ' + r.status));
+        return j;
+      }); });
+    }
+  };
+  function mail() { try { var t = SB.s().access.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'); return JSON.parse(atob(t)).email || null; } catch (e) { return null; } }
+  var SYNC = {
+    ready: false, busy: false, again: false, timer: null, late: null, admin: rd('r2r_isadmin', false) === true,
+    touch: function () { wr(DIRTY, 1); if (SYNC.ready && SB.on()) { clearTimeout(SYNC.timer); SYNC.timer = setTimeout(function () { SYNC.push(); }, 1200); } },
+    pull: function () {
+      var s = SB.s();
+      return SB.json('GET', '/rest/v1/user_state?user_id=eq.' + s.uid + '&select=state,version').then(function (a) { return a && a[0] ? a[0] : null; });
+    },
+    push: function (keep) {
+      if (!SB.on() || !SYNC.ready) return Promise.resolve();
+      if (SYNC.busy) { SYNC.again = true; return Promise.resolve(); }
+      var s = SB.s(), ver = rd(VER, null), snap = JSON.stringify(state);
+      SYNC.busy = true;
+      var p = ver == null
+        ? SB.req('POST', '/rest/v1/user_state', { user_id: s.uid, email: mail(), state: state }, { Prefer: 'return=representation' }, keep)
+        : SB.req('PATCH', '/rest/v1/user_state?user_id=eq.' + s.uid + '&version=eq.' + ver, { state: state, email: mail() }, { Prefer: 'return=representation' }, keep);
+      return p.then(function (r) {
+        if (keep) return null;                                   // page is closing: nothing more to do
+        return r.text().then(function (t) {
+          var j = null; try { j = JSON.parse(t); } catch (e) {}
+          if (r.ok && j && j.length) { wr(VER, j[0].version); if (JSON.stringify(state) === snap) wr(DIRTY, 0); else SYNC.again = true; return null; }
+          if ((r.ok && j && !j.length) || r.status === 409) return SYNC.conflict();
+          throw new Error('HTTP ' + r.status);
+        });
+      }).catch(function () { /* offline or server error: stays marked as unsaved, retried on the next change */ })
+        .then(function () { SYNC.busy = false; if (SYNC.again) { SYNC.again = false; clearTimeout(SYNC.timer); SYNC.timer = setTimeout(function () { SYNC.push(); }, 300); } });
+    },
+    conflict: function () {
+      return SYNC.pull().then(function (remote) {
+        if (!remote) { wr(VER, null); SYNC.again = true; return; }   // row was removed: next push creates it again
+        wr(BAK, state);
+        state = Object.assign(seed(), remote.state); wr(KEY, state); wr(VER, remote.version); wr(DIRTY, 0);
+        toast('Your list was changed elsewhere (for example by an admin). The latest version is loaded.');
+        if (APP.indexOf(page) > -1 && $('view')) { shell(); draw(); }
+      });
+    },
+    boot: function () {
+      if (!SB.on()) return Promise.resolve();
+      var s = SB.s(), owner = rd(OWN, null);
+      if (owner && owner !== s.uid) { state = seed(); wr(KEY, state); wr(VER, null); wr(DIRTY, 0); owner = null; }   // leftovers of another account
+      var work = Promise.all([SYNC.pull(), SB.json('GET', '/rest/v1/admins?select=user_id').then(function (a) { return !!(a && a.length); }).catch(function () { return false; })])
+        .then(function (r) {
+          var remote = r[0], changed = false, mine = owner === s.uid, dirty = !!rd(DIRTY, 0), hasLocal = !!(state.sponsors.length || state.messages.length);
+          SYNC.admin = r[1]; wr('r2r_isadmin', SYNC.admin);
+          if (remote) {
+            if (mine && dirty && rd(VER, null) === remote.version) { /* unsaved local edits on top of the latest version: keep them */ }
+            else { if (hasLocal && (dirty || !owner)) wr(BAK, state); state = Object.assign(seed(), remote.state); wr(KEY, state); wr(DIRTY, 0); changed = true; }
+            wr(VER, remote.version);
+          } else { wr(VER, null); if (hasLocal) wr(DIRTY, 1); }       // first time with the cloud: upload what is in this browser
+          wr(OWN, s.uid); SYNC.ready = true;
+          if (rd(DIRTY, 0)) SYNC.push();
+          return changed;
+        });
+      work.then(function (changed) { if (changed && SYNC.late) SYNC.late(); }, function () {});
+      return Promise.race([work.then(function () {}, function () {}), new Promise(function (ok) { setTimeout(ok, 4000); })]);
+    }
+  };
+  function flushNow() { if (SYNC.ready && rd(DIRTY, 0)) SYNC.push(true); }
+  window.addEventListener('pagehide', flushNow);
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flushNow(); });
   function $(i) { return document.getElementById(i); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   var qs = new URLSearchParams(location.search), page = document.body.getAttribute('data-page');
-  var APP = ['dashboard', 'find', 'sponsor', 'angle', 'draft', 'pipeline', 'messages', 'settings', 'discover'];
+  var APP = ['dashboard', 'find', 'sponsor', 'angle', 'draft', 'pipeline', 'messages', 'settings', 'discover', 'admin'];
   var LABEL = { suggested: 'Suggested', approached: 'Approached', conversation: 'In conversation', confirmed: 'Confirmed', declined: 'Declined' };
   var COLS = ['suggested', 'approached', 'conversation', 'confirmed', 'declined'];
   var VAL = { low: 1, medium: 2, high: 3 };
@@ -29,7 +124,7 @@
     return { sponsors: [], messages: [], compose: null, target: 6, v2: 1, event: { name: 'Rally To Rumble', date: '', place: '' } };
   }
   var state = rd(KEY, null) || seed();
-  function save() { wr(KEY, state); }
+  function save() { wr(KEY, state); SYNC.touch(); }
   (function () {
     if (state.v2) return;
     var old = ['autoparts', 'verheyen', 'maasstad', 'noordbouw', 'frituur', 'bakkerij', 'peeters', 'zwarte', 'plaza'];
@@ -161,7 +256,14 @@
 
   /* ---------- actions (called from inline handlers) ---------- */
   window.R2R = {
-    out: function () { wr(SES, null); location.href = 'login.html'; },
+    out: function () {
+      var go = function () {
+        wr(SES, null);
+        if (SB.on()) ['r2r_state', SBK, OWN, VER, DIRTY, 'r2r_isadmin'].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });   // your data stays safe in the cloud
+        location.href = 'login.html';
+      };
+      if (SB.on() && SYNC.ready && rd(DIRTY, 0)) { clearTimeout(SYNC.timer); Promise.race([SYNC.push(), new Promise(function (ok) { setTimeout(ok, 3000); })]).then(go, go); } else go();
+    },
     f: function (g, v) { F[g] = v; draw(); },
     sort: function (k) { if (F.key === k) F.dir *= -1; else { F.key = k; F.dir = k === 'name' || k === 'industry' ? 1 : -1; } draw(); },
     add: function () {
@@ -202,12 +304,12 @@
   };
   window.$ = $;
   window.R2R_P = P;
-  window.R2R_CORE = { get state() { return state; }, save: save, draw: draw, esc: esc, sp: sp, rd: rd, wr: wr };
+  window.R2R_CORE = { get state() { return state; }, save: save, draw: draw, esc: esc, sp: sp, rd: rd, wr: wr, sb: SB, sync: SYNC, toast: toast, modal: modal, closeM: closeM };
 
   /* ---------- shell, auth, start ---------- */
   function shell() {
-    var nav = [['dashboard', 'Dashboard'], ['find', 'Find sponsors'], ['discover', 'Discover companies'], ['pipeline', 'Pipeline'], ['messages', 'Messages'], ['manage', 'Rally details'], ['settings', 'Settings']];
-    var on = { dashboard: 'dashboard', find: 'find', discover: 'discover', sponsor: 'find', angle: 'find', draft: 'messages', pipeline: 'pipeline', messages: 'messages', settings: 'settings' }[page];
+    var nav = [['dashboard', 'Dashboard'], ['find', 'Find sponsors'], ['discover', 'Discover companies'], ['pipeline', 'Pipeline'], ['messages', 'Messages'], ['manage', 'Rally details'], ['settings', 'Settings']]; if (SYNC.admin) nav.push(['admin', 'Admin']);
+    var on = { dashboard: 'dashboard', find: 'find', discover: 'discover', sponsor: 'find', angle: 'find', draft: 'messages', pipeline: 'pipeline', messages: 'messages', settings: 'settings', admin: 'admin' }[page];
     $('side').innerHTML = '<a class="brand" href="index.html" aria-label="Rally to Rumble home"><span class="logo" role="img" aria-label="Rally to Rumble"></span></a><div class="evt"><b>' + esc(state.event.name) + '</b><small id="clk"></small></div><nav class="nav">' +
       nav.map(function (n) { return '<a href="' + n[0] + '.html" class="' + (n[0] === on ? 'on' : '') + '">' + n[1] + '</a>'; }).join('') + '</nav><div class="who"><span>' + esc(user().name) + '</span><button class="ghost sm" onclick="R2R.out()">Log out</button></div>';
   }
@@ -253,13 +355,17 @@
     }
     if (APP.indexOf(page) > -1) {
       if (!rd(SES, null)) { location.href = 'login.html'; return; }
-      shell(); tick(); setInterval(tick, 15000); draw();
-      if (page === 'pipeline') {
-        if (qs.get('open') && get(qs.get('open'))) drawer(get(qs.get('open')));
-        var sid = qs.get('sent'), s = sid && get(sid);
-        if (s) modal('<div class="modal center"><div class="ok">\u2713</div><h2>Message sent</h2><p class="mute">' + esc(s.name) + '</p><div class="card" style="text-align:left"><div class="split"><small>Status</small><span class="pill dark">Approached</span></div><div class="split" style="margin-top:8px"><small>Reminder</small><small>Follow up in 7 days</small></div></div><button class="block" onclick="R2R.close()">View in pipeline</button><a class="btn ghost block" href="find.html">Find another sponsor</a></div>');
-      }
-      if (page === 'find' && qs.get('add')) window.R2R.add();
+      var started = false, begin = function () {
+        if (started) return; started = true; SYNC.late = function () { shell(); draw(); };
+        shell(); tick(); setInterval(tick, 15000); draw();
+        if (page === 'pipeline') {
+          if (qs.get('open') && get(qs.get('open'))) drawer(get(qs.get('open')));
+          var sid = qs.get('sent'), s = sid && get(sid);
+          if (s) modal('<div class="modal center"><div class="ok">\u2713</div><h2>Message sent</h2><p class="mute">' + esc(s.name) + '</p><div class="card" style="text-align:left"><div class="split"><small>Status</small><span class="pill dark">Approached</span></div><div class="split" style="margin-top:8px"><small>Reminder</small><small>Follow up in 7 days</small></div></div><button class="block" onclick="R2R.close()">View in pipeline</button><a class="btn ghost block" href="find.html">Find another sponsor</a></div>');
+        }
+        if (page === 'find' && qs.get('add')) window.R2R.add();
+      };
+      SYNC.boot().then(begin, begin);
     }
   });
 })();
