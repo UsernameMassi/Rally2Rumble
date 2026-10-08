@@ -10,18 +10,20 @@
 <link rel="stylesheet" href="css/theme.css">
 <link rel="stylesheet" href="css/info.css">
 <link rel="stylesheet" href="css/blueprint.css">
+<link rel="stylesheet" href="css/route-agenda.css">
 <script src="java/theme.js"></script>
 </head>
 <body>
 <div class="stripe"></div>
 <header><a class="brand" href="index.html">Rally<b>2</b>Rumble</a>
-<nav class="nav2"><a href="index.html">Info</a><a href="route.html" class="on">Route</a><a href="agenda.html">Agenda</a><a href="gallery.html">Photos</a></nav>
+<nav class="nav2"><a href="index.html">Info</a><a href="route.html" class="on">Route</a><a href="agenda.html">Agenda</a><a href="gallery.html">Photos</a><a href="community.html">Community</a></nav>
 <div class="row" id="nav"></div></header>
 <main>
 <div class="page-top"><h1>The route</h1><div class="row noprint"><button type="button" data-pdf="route">Download route PDF</button></div></div>
-<p class="lead">Follow the route from start to finish. Distances and locations are confirmed by the organisers.</p>
-<div class="mapbox" id="r-map"></div>
-<ol class="list" id="r-route"></ol>
+<p class="lead">Start at A and follow the steps in order. Tap a step to tick it off; the next one is highlighted.</p>
+<div class="rsum" id="r-sum"></div>
+<div class="row noprint" style="margin-bottom:16px"><button type="button" class="ghost sm" id="r-reset">Reset progress</button></div>
+<div class="route" id="r-route"></div>
 <div class="note" style="margin-top:24px" id="r-routenote"></div>
 </main>
 <script src="java/rally-data.js"></script>

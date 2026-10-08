@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Join the Community | Rally2Rumble</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Michroma&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/theme.css">
+<link rel="stylesheet" href="css/info.css">
+<link rel="stylesheet" href="css/blueprint.css">
+<script src="java/theme.js"></script>
+<style>
+.join{max-width:560px;margin:0 auto}
+.join h1{font-size:clamp(44px,9vw,76px);font-weight:800}
+.join .lead{margin:14px 0 6px}
+.join form{max-width:none;margin:22px 0 0}
+.langs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
+.req{color:var(--accent)}
+.hint{display:block;color:var(--mute);font-size:13px;margin-top:4px}
+.cb{display:flex;gap:10px;align-items:flex-start;font-weight:400;margin-top:18px}
+.cb input{width:auto;margin-top:5px}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.done{border-top:6px solid var(--accent);background:var(--panel);border:1px solid var(--line);padding:26px;margin-top:22px}
+.done h2{font-size:34px;margin-bottom:10px}
+</style>
+</head>
+<body>
+<div class="stripe"></div>
+<header><a class="brand" href="index.html">Rally<b>2</b>Rumble</a>
+<nav class="nav2"><a href="index.html">Info</a><a href="route.html">Route</a><a href="agenda.html">Agenda</a><a href="gallery.html">Photos</a><a href="community.html" class="on">Community</a></nav>
+<div class="row" id="nav"></div></header>
+<main>
+<div class="join">
+<div class="langs" role="group" aria-label="Taal / Sprache / Language / Langue">
+<button type="button" class="chip" data-l="nl" lang="nl">Nederlands</button>
+<button type="button" class="chip" data-l="de" lang="de">Deutsch</button>
+<button type="button" class="chip" data-l="en" lang="en">English</button>
+<button type="button" class="chip" data-l="fr" lang="fr">Fran&ccedil;ais</button>
+</div>
+<h1>Join the Community</h1>
+<p class="lead" data-i="lead"></p>
+
+<form id="f" novalidate>
+<h2 data-i="form"></h2>
+<p class="hint" style="margin:-8px 0 8px"><span class="req">*</span> <span data-i="req"></span></p>
+
+<label for="name"><span data-i="name"></span> <span class="req">*</span></label>
+<input id="name" name="name" autocomplete="name" required minlength="2" maxlength="120">
+
+<label for="car"><span data-i="car"></span> <span class="req">*</span></label>
+<input id="car" name="car" autocomplete="off" required minlength="2" maxlength="160" data-ph="car_ph">
+
+<label for="email"><span data-i="email"></span> <span class="req">*</span></label>
+<input id="email" name="email" type="email" autocomplete="email" required maxlength="200">
+
+<label for="phone"><span data-i="phone"></span> <span class="req">*</span></label>
+<input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" required maxlength="30" placeholder="06 12345678">
+
+<div class="hp" aria-hidden="true"><label>Website<input name="website" tabindex="-1" autocomplete="off"></label></div>
+
+<label class="cb"><input type="checkbox" id="consent" required><span><span data-i="consent"></span> <span class="req">*</span></span></label>
+
+<button type="submit" id="go"></button>
+<div class="msg" id="msg" role="alert" aria-live="polite"></div>
+</form>
+
+<div class="done" id="ok" hidden>
+<h2 data-i="ok_h"></h2>
+<p data-i="ok_p"></p>
+<a class="btn ghost block" href="index.html" data-i="back"></a>
+</div>
+</div>
+</main>
+<script>
+(function () {
+  var SBU = 'https://xhfckfrekbvhjsqftwcb.supabase.co', SBK = 'sb_publishable_hlUllOuo20Y_iL-5Cey4Fg_9tky4mSR';   // public values, same as auth.js
+  /* Languages: Dutch is the main one and the fallback. To add a language, copy one block and add a button above. */
+  var T = {
+    nl: { lead: "Sluit je (gratis) aan bij de organisatie voor en door autoliefhebbers en maak kennis met rally's en evenementen voor autoliefhebbers zoals jij.",
+      form: "Word lid", req: 'Verplichte vraag', name: 'Voor- en achternaam', car: 'Huidige sportauto of klassieker + kenteken', car_ph: 'Bijv. Porsche 911 (964), AB-123-C', email: 'E-mailadres', phone: 'Telefoonnummer',
+      consent: 'Ik ga akkoord dat Rally2Rumble mijn gegevens gebruikt om mij te informeren over rally\'s en evenementen. Mijn gegevens worden niet gedeeld met derden.',
+      go: "Word lid", going: "Even geduld\u2026", ok_h: "Welkom in de community", ok_p: "Bedankt, je staat op de lijst. Je hoort van ons via e-mail zodra er een nieuwe rally of een evenement aankomt.", back: 'Terug naar de rally-info',
+      e_fill: 'Vul alle verplichte velden in (met een geldig e-mailadres).', e_phone: 'Vul een geldig telefoonnummer in, bijvoorbeeld 06 12345678.', e_dup: "Dit e-mailadres staat al in de community.",
+      e_fail: "Opslaan is niet gelukt. Controleer je gegevens en probeer het opnieuw.", e_net: 'Geen verbinding. Controleer je internet en probeer het opnieuw.' },
+    de: { lead: 'Werde (kostenlos) Teil der Organisation von und f\u00fcr Autoliebhaber und lerne Rallyes und Events f\u00fcr Autoliebhaber wie dich kennen.',
+      form: "Mitglied werden", req: 'Pflichtfeld', name: 'Vor- und Nachname', car: 'Aktueller Sportwagen oder Klassiker + Kennzeichen', car_ph: 'z. B. Porsche 911 (964), AB-123-C', email: 'E-Mail-Adresse', phone: 'Telefonnummer',
+      consent: 'Ich bin damit einverstanden, dass Rally2Rumble meine Daten verwendet, um mich \u00fcber Rallyes und Events zu informieren. Meine Daten werden nicht an Dritte weitergegeben.',
+      go: "Mitglied werden", going: "Einen Moment\u2026", ok_h: "Willkommen in der Community", ok_p: "Danke, du stehst auf der Liste. Wir melden uns per E-Mail, sobald eine neue Rallye oder ein Event ansteht.", back: 'Zur\u00fcck zur Rally-Info',
+      e_fill: 'F\u00fclle alle Pflichtfelder aus (mit einer g\u00fcltigen E-Mail-Adresse).', e_phone: 'Gib eine g\u00fcltige Telefonnummer ein, zum Beispiel 06 12345678.', e_dup: "Diese E-Mail-Adresse ist bereits in der Community.",
+      e_fail: "Das hat nicht geklappt. Pr\u00fcfe deine Angaben und versuche es erneut.", e_net: 'Keine Verbindung. Pr\u00fcfe dein Internet und versuche es erneut.' },
+    en: { lead: 'Join the organisation by and for car enthusiasts, free of charge, and discover rallies and events for people who love cars like you do.',
+      form: "Join us", req: 'Required question', name: 'First and last name', car: 'Current sports car or classic + licence plate', car_ph: 'e.g. Porsche 911 (964), AB-123-C', email: 'Email address', phone: 'Phone number',
+      consent: 'I agree that Rally2Rumble may use my details to keep me informed about rallies and events. My details are not shared with third parties.',
+      go: "Join the community", going: "One moment\u2026", ok_h: "Welcome to the community", ok_p: "Thanks, you're on the list. We'll email you when a new rally or event is coming up.", back: 'Back to the rally info',
+      e_fill: 'Fill in all required fields (with a valid email address).', e_phone: 'Enter a valid phone number, for example 06 12345678.', e_dup: "This email address is already in the community.",
+      e_fail: "That didn't work. Check your details and try again.", e_net: 'No connection. Check your internet and try again.' },
+    fr: { lead: 'Rejoins gratuitement l\'organisation par et pour les passionn\u00e9s d\'automobile et d\u00e9couvre des rallyes et des \u00e9v\u00e9nements pour des passionn\u00e9s comme toi.',
+      form: "Rejoins-nous", req: 'Question obligatoire', name: 'Pr\u00e9nom et nom', car: 'Voiture de sport ou classique actuelle + plaque d\'immatriculation', car_ph: 'p. ex. Porsche 911 (964), AB-123-C', email: 'Adresse e-mail', phone: 'Num\u00e9ro de t\u00e9l\u00e9phone',
+      consent: 'J\'accepte que Rally2Rumble utilise mes donn\u00e9es pour m\'informer des rallyes et \u00e9v\u00e9nements. Mes donn\u00e9es ne sont pas partag\u00e9es avec des tiers.',
+      go: "Je rejoins la communaut\u00e9", going: "Un instant\u2026", ok_h: "Bienvenue dans la communaut\u00e9", ok_p: "Merci, tu es sur la liste. Nous t'\u00e9crirons par e-mail d\u00e8s qu'un nouveau rallye ou \u00e9v\u00e9nement est pr\u00e9vu.", back: 'Retour aux infos du rallye',
+      e_fill: 'Remplis tous les champs obligatoires (avec une adresse e-mail valide).', e_phone: 'Saisis un num\u00e9ro de t\u00e9l\u00e9phone valide, par exemple 06 12345678.', e_dup: "Cette adresse e-mail fait d\u00e9j\u00e0 partie de la communaut\u00e9.",
+      e_fail: "\u00c7a n'a pas fonctionn\u00e9. V\u00e9rifie tes informations et r\u00e9essaie.", e_net: 'Pas de connexion. V\u00e9rifie ta connexion internet et r\u00e9essaie.' }
+  };
+  var K = 'r2r_lang', lang = 'nl', saved = null, msgKey = '', busy = false;
+  try { saved = localStorage.getItem(K); } catch (e) {}
+  if (saved && T[saved]) lang = saved;
+  else { var b = (navigator.language || 'nl').slice(0, 2).toLowerCase(); if (T[b]) lang = b; }   // first visit: use the browser language, otherwise Dutch
+
+  var f = document.getElementById('f'), msg = document.getElementById('msg'), go = document.getElementById('go'), ok = document.getElementById('ok');
+  function all(sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); }
+  function apply() {
+    var t = T[lang];
+    document.documentElement.lang = lang;
+    all('[data-i]').forEach(function (n) { n.textContent = t[n.getAttribute('data-i')]; });
+    all('[data-ph]').forEach(function (n) { n.placeholder = t[n.getAttribute('data-ph')]; });
+    all('.langs button').forEach(function (b) { var on = b.getAttribute('data-l') === lang; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+    go.textContent = busy ? t.going : t.go;
+    msg.textContent = msgKey ? t[msgKey] : '';
+  }
+  function say(k) { msgKey = k; msg.textContent = k ? T[lang][k] : ''; }
+  all('.langs button').forEach(function (b) { b.addEventListener('click', function () {
+    lang = b.getAttribute('data-l'); try { localStorage.setItem(K, lang); } catch (e) {} apply();
+  }); });
+
+  function done() { f.hidden = true; ok.hidden = false; ok.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  function v(id) { return document.getElementById(id).value.trim(); }
+  f.addEventListener('submit', function (e) {
+    e.preventDefault(); say('');
+    var phone = v('phone');
+    if (!f.checkValidity()) return say('e_fill');
+    if (phone.replace(/\D/g, '').length < 8 || !/^[+\d][\d\s().-]{6,}$/.test(phone)) return say('e_phone');
+    if (f.website.value) return done();   // spam trap: bots fill the hidden field
+    busy = true; go.disabled = true; apply();
+    fetch(SBU + '/rest/v1/community_signups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SBK, Authorization: 'Bearer ' + SBK, Prefer: 'return=minimal' },
+      body: JSON.stringify({ name: v('name'), car: v('car'), email: v('email').toLowerCase(), phone: phone, consent: true })
+    }).then(function (r) {
+      if (r.ok) return done();
+      throw new Error(r.status === 409 ? 'e_dup' : 'e_fail');
+    }).catch(function (err) {
+      busy = false; go.disabled = false; msgKey = err instanceof TypeError ? 'e_net' : err.message; apply();
+    });
+  });
+  apply();
+})();
+</script>
+</body>
+</html>

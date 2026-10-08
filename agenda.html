@@ -10,17 +10,18 @@
 <link rel="stylesheet" href="css/theme.css">
 <link rel="stylesheet" href="css/info.css">
 <link rel="stylesheet" href="css/blueprint.css">
+<link rel="stylesheet" href="css/route-agenda.css">
 <script src="java/theme.js"></script>
 </head>
 <body>
 <div class="stripe"></div>
 <header><a class="brand" href="index.html">Rally<b>2</b>Rumble</a>
-<nav class="nav2"><a href="index.html">Info</a><a href="route.html">Route</a><a href="agenda.html" class="on">Agenda</a><a href="gallery.html">Photos</a></nav>
+<nav class="nav2"><a href="index.html">Info</a><a href="route.html">Route</a><a href="agenda.html" class="on">Agenda</a><a href="gallery.html">Photos</a><a href="community.html">Community</a></nav>
 <div class="row" id="nav"></div></header>
 <main>
 <div class="page-top"><h1>Agenda</h1><div class="row noprint"><button type="button" data-pdf="agenda">Download agenda PDF</button></div></div>
 <p class="lead">The plan for the day, from check-in to prize giving.</p>
-<ol class="list" id="r-agenda" style="margin-top:20px"></ol>
+<div class="ag" id="r-agenda"></div>
 <div class="note" style="margin-top:24px" id="r-agendanote"></div>
 </main>
 <script src="java/rally-data.js"></script>

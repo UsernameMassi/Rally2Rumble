@@ -50,31 +50,98 @@
       $('r-facts').innerHTML = f.map(function (x) { return '<div class="fact"><span>' + x[0] + '</span><b>' + esc(x[1]) + '</b></div>'; }).join('');
     }
   }
-  function renderRoute(d) {
-    var st = d.route.stages, p = points(st.length);
-    if ($('r-routenote')) $('r-routenote').textContent = d.route.note;
-    if ($('r-map')) {
-      var path = '', i;
-      for (i = 0; i < p.length; i++) {
-        if (!i) path = 'M' + p[0].x + ' ' + p[0].y;
-        else { var dx = (p[i].x - p[i - 1].x) / 2; path += ' C' + (p[i - 1].x + dx) + ' ' + p[i - 1].y + ' ' + (p[i].x - dx) + ' ' + p[i].y + ' ' + p[i].x + ' ' + p[i].y; }
-      }
-      var svg = '<svg viewBox="0 0 620 250" role="img" aria-label="Route overview"><path d="' + path + '"/>';
-      p.forEach(function (q, k) {
-        var lab = st[k].name.length > 14 ? st[k].name.slice(0, 13) + '\u2026' : st[k].name;
-        var an = k === 0 ? 'start' : (k === p.length - 1 && p.length > 1 ? 'end' : 'middle');
-        svg += '<circle cx="' + q.x + '" cy="' + q.y + '" r="6"/><text x="' + q.x + '" y="' + (q.y + 22) + '" text-anchor="' + an + '">' + esc(lab) + '</text>';
+  function stageKind(s, i, n) {
+    if (i === 0) return ['start', 'Start'];
+    if (i === n - 1 && n > 1) return ['finish', 'Finish'];
+    if (/lunch|break|rest|regroup|service|refuel/i.test(s.name)) return ['break', 'Break'];
+    return ['stage', 'Stage'];
+  }
+  function L(i) { return String.fromCharCode(65 + (i % 26)); }
+  /* ---------- turn-by-turn ---------- */
+  var TURNS = [['straight', 'Straight on'], ['slight-left', 'Slight left'], ['left', 'Turn left'], ['sharp-left', 'Sharp left'], ['slight-right', 'Slight right'], ['right', 'Turn right'], ['sharp-right', 'Sharp right'], ['uturn', 'U-turn'], ['roundabout', 'Roundabout']];
+  var ANG = { 'straight': 0, 'slight-right': 45, 'right': 90, 'sharp-right': 135, 'slight-left': -45, 'left': -90, 'sharp-left': -135 };
+  function turnLabel(t) { for (var i = 0; i < TURNS.length; i++) if (TURNS[i][0] === t) return TURNS[i][1]; return 'Continue'; }
+  function icon(t) {
+    var g;
+    if (t === 'uturn') g = '<path d="M7 20V10a5 5 0 0 1 10 0v9M13 15l4 4 4-4"/>';
+    else if (t === 'roundabout') g = '<circle cx="12" cy="15" r="4.5"/><path d="M12 10.5V3M9 6l3-3 3 3"/>';
+    else g = '<g transform="rotate(' + (ANG[t] || 0) + ' 12 12)"><path d="M12 20V5M6 11l6-6 6 6"/></g>';
+    return '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + g + '</svg>';
+  }
+  function num(x) { return parseFloat(String(x == null ? '' : x).replace(',', '.')) || 0; }
+  function parseT(s) { var m = /^\s*(\d{1,2})[:.](\d{2})\s*$/.exec(String(s || '')); return m ? +m[1] * 60 + +m[2] : null; }
+  function fmtT(m) { m = Math.round(m) % 1440; return ('0' + Math.floor(m / 60)).slice(-2) + ':' + ('0' + (m % 60)).slice(-2); }
+  function fmtK(k) { return (Math.round(k * 10) / 10).toString(); }
+  function fmtD(m) { m = Math.round(m); return m >= 60 ? Math.floor(m / 60) + ' h ' + ('0' + (m % 60)).slice(-2) + ' min' : m + ' min'; }
+  /* distances + ETAs: start time, average speed, km per step, stop time per stop */
+  function calc(d) {
+    var r = d.route, st = r.stages, sp = num(r.speed), t0 = parseT(r.startTime), clock = t0, total = 0, out = [];
+    st.forEach(function (s, i) {
+      var last = i === st.length - 1, wait = num(s.wait), arr = clock, dep = arr == null ? null : arr + wait, cum = 0;
+      var steps = last ? [] : (s.steps || []).map(function (p) {
+        var k = num(p.km), e = dep == null || !sp ? null : dep + cum / sp * 60; cum += k;
+        return { turn: p.turn, text: p.text, km: k, eta: e };
       });
-      $('r-map').innerHTML = svg + '</svg>';
+      var legKm = last ? 0 : (steps.length ? cum : num(s.dist));
+      out.push({ s: s, eta: arr, dep: dep, wait: wait, steps: steps, legKm: legKm, legMin: sp ? legKm / sp * 60 : null });
+      total += legKm; clock = dep == null || (!sp && legKm) ? null : dep + (sp ? legKm / sp * 60 : 0);
+    });
+    return { stops: out, total: total, start: t0, drive: sp ? total / sp * 60 : null, finish: out.length ? out[out.length - 1].eta : null };
+  }
+  function doneGet() { try { return JSON.parse(localStorage.getItem('r2r_routedone')) || []; } catch (e) { return []; } }
+  function doneMark() {
+    var el = $('r-route'); if (!el) return; var done = doneGet(), first = true;
+    Array.prototype.forEach.call(el.querySelectorAll('.stp li'), function (li) {
+      var is = done.indexOf(li.getAttribute('data-k')) > -1;
+      li.classList.toggle('done', is); li.classList.toggle('next', !is && first); if (!is) first = false;
+    });
+  }
+  function renderRoute(d) {
+    var st = d.route.stages, n = st.length, c = calc(d), eta = c.total > 0;
+    if ($('r-routenote')) $('r-routenote').textContent = d.route.note;
+    if ($('r-sum')) {
+      var it = [];
+      if (c.total > 0) it.push(['Total distance', fmtK(c.total) + ' km']);
+      if (c.drive != null && c.total > 0) it.push(['Driving time', fmtD(c.drive)]);
+      if (eta && c.start != null) it.push(['Departure', fmtT(c.start)]);
+      if (eta && c.finish != null) it.push(['Finish ETA', fmtT(c.finish)]);
+      it.push(['Stops', n]);
+      $('r-sum').innerHTML = it.map(function (x) { return '<div><b>' + x[1] + '</b><span>' + x[0] + '</span></div>'; }).join('');
     }
-    if ($('r-route')) $('r-route').innerHTML = st.map(function (s, i) {
-      return '<li><span class="t">' + (i < 9 ? '0' : '') + (i + 1) + '</span><div><h3>' + esc(s.name) + '</h3><p>' + esc(s.desc) + '</p></div><span class="meta">' + esc(s.dist) + '</span></li>';
+    var el = $('r-route'); if (!el) return;
+    el.innerHTML = c.stops.map(function (x, i) {
+      var kd = stageKind(x.s, i, n), last = i === n - 1, html;
+      html = '<section class="wp wp-' + kd[0] + '"><div class="wp-h"><span class="wp-n">' + L(i) + '</span><div><span class="wp-tag">' + kd[1] + '</span><h3>' + esc(x.s.name) + '</h3>' + (x.s.desc ? '<p>' + esc(x.s.desc) + '</p>' : '') + '</div>' +
+        (eta && x.eta != null ? '<div class="wp-eta"><b>' + fmtT(x.eta) + '</b><small>' + (i === 0 ? 'Depart' : 'Arrive') + '</small>' + (x.wait && i ? '<small>Stop ' + x.wait + ' min, leave ' + fmtT(x.dep) + '</small>' : '') + '</div>' : '') + '</div>';
+      if (!last) {
+        if (x.steps.length) html += '<details class="leg" open><summary>' + L(i) + ' \u2192 ' + L(i + 1) + ' \u00b7 ' + x.steps.length + ' steps \u00b7 ' + fmtK(x.legKm) + ' km' + (x.legMin != null && x.legKm ? ' \u00b7 ' + fmtD(x.legMin) : '') + '</summary><ol class="stp">' + x.steps.map(function (p, j) {
+          return '<li data-k="' + i + '-' + j + '"><span class="stp-i">' + icon(p.turn) + '</span><div class="stp-b"><b>' + esc(p.text || turnLabel(p.turn)) + '</b></div><span class="stp-r">' + (eta && p.eta != null ? '<b>' + fmtT(p.eta) + '</b>' : '') + (p.km ? '<small>' + fmtK(p.km) + ' km</small>' : '') + '</span></li>';
+        }).join('') + '</ol></details>';
+        else html += '<p class="leg-empty">' + L(i) + ' \u2192 ' + L(i + 1) + (x.legKm ? ' \u00b7 ' + fmtK(x.legKm) + ' km' : '') + ' \u00b7 step-by-step directions will be added before the rally.</p>';
+      }
+      return html + '</section>';
     }).join('');
+    if (!el._b) { el._b = 1; el.addEventListener('click', function (e) {
+      var li = e.target.closest && e.target.closest('.stp li'); if (!li) return;
+      var k = li.getAttribute('data-k'), a = doneGet(), i = a.indexOf(k); if (i > -1) a.splice(i, 1); else a.push(k);
+      try { localStorage.setItem('r2r_routedone', JSON.stringify(a)); } catch (x) {}
+      doneMark();
+    }); }
+    doneMark();
   }
   function renderAgenda(d) {
     if ($('r-agendanote')) $('r-agendanote').textContent = d.agenda.note;
-    if ($('r-agenda')) $('r-agenda').innerHTML = d.agenda.items.map(function (a) {
-      return '<li><span class="t">' + esc(a.time) + '</span><div><h3>' + esc(a.title) + '</h3><p>' + esc(a.desc) + '</p></div><span class="meta"></span></li>';
+    if (!$('r-agenda')) return;
+    var groups = [['Morning', []], ['Afternoon', []], ['Evening', []]], items = d.agenda.items, ok = items.every(function (a) { return /^\s*\d{1,2}/.test(a.time || ''); });
+    items.forEach(function (a) {
+      var h = ok ? parseInt(a.time, 10) : 0;
+      groups[ok ? (h < 12 ? 0 : h < 17 ? 1 : 2) : 0][1].push(a);
+    });
+    $('r-agenda').innerHTML = groups.filter(function (g) { return g[1].length; }).map(function (g) {
+      return '<section class="ag-g">' + (ok ? '<h2 class="ag-h">' + g[0] + '</h2>' : '') + '<ol class="ag-l">' + g[1].map(function (a) {
+        var key = /start|finish|prize|briefing/i.test(a.title) ? ' key' : '';
+        return '<li class="ag-i' + key + '"><span class="ag-t">' + esc(a.time) + '</span><div><h3>' + esc(a.title) + '</h3>' + (a.desc ? '<p>' + esc(a.desc) + '</p>' : '') + '</div></li>';
+      }).join('') + '</ol></section>';
     }).join('');
   }
 
@@ -150,19 +217,26 @@
   }
   function downloadPdf(kind) {
     var d = get(), bytes;
-    if (kind === 'route') bytes = buildPdf('The route', 'Start to finish: all stages (schematic, not to scale)',
-      d.route.stages.map(function (s, i) { return [(i < 9 ? '0' : '') + (i + 1), s.name, s.desc + (s.dist ? '  Distance: ' + s.dist : '')]; }), d.route.note, d.route.stages);
+    if (kind === 'route') {
+      var c = calc(d), rows = [], eta = c.total > 0;
+      c.stops.forEach(function (x, i) {
+        rows.push([L(i) + (eta && x.eta != null ? '  ' + fmtT(x.eta) : ''), x.s.name, (x.s.desc || '') + (x.wait && i ? '  Stop: ' + x.wait + ' min' : '')]);
+        x.steps.forEach(function (p) { rows.push([eta && p.eta != null ? fmtT(p.eta) : '', turnLabel(p.turn), (p.text ? p.text + '  ' : '') + (p.km ? fmtK(p.km) + ' km' : '')]); });
+      });
+      bytes = buildPdf('The route', 'Start at A and follow every step to the finish' + (c.total > 0 ? '  |  Total ' + fmtK(c.total) + ' km' : ''), rows, d.route.note);
+    }
     else bytes = buildPdf('Agenda', 'The plan for the day',
       d.agenda.items.map(function (a) { return [a.time, a.title, a.desc]; }), d.agenda.note);
     fileDownload('rally2rumble-' + kind + '.pdf', bytes, 'application/pdf');
   }
   function dataFileText(d) { return '/* Fallback rally details (used until something is published from the Rally details page). Optional backup: replace this file with a downloaded copy. */\nwindow.RALLY_DEFAULT = ' + JSON.stringify(d, null, 2) + ';\n'; }
 
-  root.RALLY = { get: get, save: save, reset: reset, esc: esc, isMember: isMember, isAdmin: isAdmin, publish: publish, fetchShared: fetchShared, hasShared: hasShared, legacy: legacy, clone: clone, buildPdf: buildPdf, downloadPdf: downloadPdf, fileDownload: fileDownload, dataFileText: dataFileText };
+  root.RALLY = { TURNS: TURNS, calc: calc, get: get, save: save, reset: reset, esc: esc, isMember: isMember, isAdmin: isAdmin, publish: publish, fetchShared: fetchShared, hasShared: hasShared, legacy: legacy, clone: clone, buildPdf: buildPdf, downloadPdf: downloadPdf, fileDownload: fileDownload, dataFileText: dataFileText };
 
   if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', function () {
     var d = get(); renderInfo(d); renderRoute(d); renderAgenda(d);
     fetchShared().then(function (changed) { if (!changed) return; var n = get(); renderInfo(n); renderRoute(n); renderAgenda(n); root.dispatchEvent(new Event('rally-shared')); });
+    var rs = $('r-reset'); if (rs) rs.addEventListener('click', function () { try { localStorage.removeItem('r2r_routedone'); } catch (e) {} doneMark(); });
     Array.prototype.forEach.call(document.querySelectorAll('[data-pdf]'), function (b) { b.addEventListener('click', function () { downloadPdf(b.getAttribute('data-pdf')); }); });
     var nav = document.querySelector('.nav2');
     if (nav && isMember() && isAdmin() && !document.querySelector('.nav2 a[href="manage.html"]')) { var a = document.createElement('a'); a.href = 'manage.html'; a.textContent = 'Manage'; if (/manage\.html/.test(location.pathname)) a.className = 'on'; nav.appendChild(a); }

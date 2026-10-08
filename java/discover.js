@@ -553,7 +553,8 @@
       (D.results.length ? '<div class="row" style="margin-bottom:10px"><b>' + l.length + ' shown</b><button class="ghost sm" onclick="R2R_D.all()">Select all shown</button><button class="sm" onclick="R2R_D.addPicked()">Add selected</button></div>' + tbl(l) : '') +
       '<div class="card" style="margin-top:20px;max-width:560px"><div class="lbl">AI settings (Gemini)</div><label for="gk">API key (free from Google AI Studio)</label><input id="gk" type="password" value="' + esc(cf.key) + '" placeholder="Paste key"><label for="gm">Model</label><input id="gm" value="' + esc(cf.model) + '">' +
       '<div class="row" style="margin-top:12px"><button class="sm" onclick="R2R_D.saveKey()">Save</button><button class="ghost sm" onclick="R2R_D.clearKey()">Remove key</button></div>' +
-      '<p class="mute" style="font-size:13px">The key stays in this browser only. Only company names, types and distances are sent to Google, never personal data. On the free tier Google may use prompts to improve its products.</p></div>';
+      '<p class="mute" style="font-size:13px">The key stays in this browser only. Only company names, types and distances are sent to Google, never personal data. On the free tier Google may use prompts to improve its products.</p></div>' +
+      '<p class="mute" style="font-size:13px;margin-top:20px">Company data \u00a9 <a class="link" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>, available under the Open Database License (ODbL).</p>';
   };
 
   /* ---------- outreach email ---------- */

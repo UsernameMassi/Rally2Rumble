@@ -1,0 +1,42 @@
+/* Route + Agenda layout. Load after blueprint.css */
+.rsum{display:flex;gap:12px;flex-wrap:wrap;margin:20px 0}
+.rsum div{flex:1 1 110px;background:var(--panel,#fff);border:1px solid var(--line,#dcd8cc);border-left:5px solid var(--accent,#ff5a1f);padding:12px 16px}
+.rsum b{display:block;font:800 32px/1 'Barlow Condensed',system-ui,sans-serif;color:var(--ink)}
+.rsum span{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--mute,#6b6b73)}
+
+
+.ag-g{margin-bottom:28px}
+.ag-h{font-size:14px;letter-spacing:.14em;color:var(--mute,#6b6b73);padding-bottom:8px;border-bottom:2px solid var(--ink);margin-bottom:4px}
+.ag-i{display:grid;grid-template-columns:84px 1fr;gap:16px;padding:14px 0 14px 14px;border-bottom:1px solid var(--line,#dcd8cc);border-left:4px solid transparent}
+.ag-i.key{border-left-color:var(--accent,#ff5a1f);background:var(--panel,#fff)}
+.ag-t{font:800 26px/1.1 'Barlow Condensed',system-ui,sans-serif;font-variant-numeric:tabular-nums}
+.ag-i.key .ag-t{color:var(--accent,#ff5a1f)}
+@media print{.tl li{break-inside:avoid}}
+
+
+
+/* ---- turn-by-turn route ---- */
+.wp{margin-bottom:6px}
+.wp-h{display:grid;grid-template-columns:44px 1fr auto;gap:14px;align-items:start;background:var(--panel,#fff);border:1px solid var(--line,#dcd8cc);padding:14px 16px}
+.wp-h h3{margin:0;font-size:24px;line-height:1.1}.wp-h p{margin:6px 0 0;color:var(--mute,#6b6b73);font-size:15px}
+.wp-n{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--accent,#ff5a1f);color:var(--onaccent,#16161a);font:800 22px 'Barlow Condensed',system-ui,sans-serif}
+.wp-start .wp-n{background:var(--accent2,#ffc400)}.wp-finish .wp-n{background:var(--ink,#16161a);color:var(--bg,#fff)}
+.wp-break .wp-n{background:var(--panel,#fff);box-shadow:inset 0 0 0 3px var(--accent,#ff5a1f);color:var(--ink)}
+.wp-tag{display:inline-block;margin-bottom:6px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent,#ff5a1f)}
+.wp-eta{text-align:right}.wp-eta b{display:block;font:800 30px/1 'Barlow Condensed',system-ui,sans-serif;font-variant-numeric:tabular-nums}
+.wp-eta small{display:block;color:var(--mute,#6b6b73);font-size:12px;margin-top:2px}
+.leg{margin:0 0 0 21px;border-left:3px solid var(--accent,#ff5a1f);padding:4px 0 4px 20px}
+.leg summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--mute,#6b6b73);padding:12px 0;list-style:none}
+.leg summary::-webkit-details-marker{display:none}.leg summary::before{content:"\25BE  "}.leg:not([open]) summary::before{content:"\25B8  "}
+.leg-empty{margin:0 0 0 21px;border-left:3px dotted var(--line,#dcd8cc);padding:14px 0 14px 20px;font-size:14px;color:var(--mute,#6b6b73)}
+.stp{list-style:none;margin:0;padding:0}
+.stp li{display:grid;grid-template-columns:40px 1fr auto;gap:14px;align-items:center;padding:12px 10px;border-bottom:1px solid var(--line,#dcd8cc);cursor:pointer;-webkit-tap-highlight-color:transparent}
+.stp-i{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--panel,#fff);box-shadow:inset 0 0 0 2px var(--ink,#16161a);color:var(--ink,#16161a)}
+.stp-b b{font-size:17px;font-weight:600;line-height:1.3}
+.stp-r{text-align:right}.stp-r b{display:block;font:800 22px/1 'Barlow Condensed',system-ui,sans-serif;color:var(--accent,#ff5a1f);font-variant-numeric:tabular-nums}
+.stp-r small{color:var(--mute,#6b6b73);font-size:13px;white-space:nowrap}
+.stp li.next{background:var(--panel,#fff);box-shadow:inset 5px 0 0 var(--accent2,#ffc400)}
+.stp li.next .stp-i{background:var(--accent2,#ffc400);box-shadow:none;color:#16161a}
+.stp li.done{opacity:.4}.stp li.done .stp-b b{text-decoration:line-through}
+@media(max-width:560px){.wp-h{grid-template-columns:36px 1fr;gap:10px}.wp-n{width:36px;height:36px;font-size:18px}.wp-eta{grid-column:2;text-align:left}.leg{margin-left:17px;padding-left:12px}.leg-empty{margin-left:17px;padding-left:12px}.stp li{grid-template-columns:36px 1fr auto;gap:10px;padding:12px 4px}.stp-i{width:36px;height:36px}}
+@media print{.stp li{break-inside:avoid}.noprint{display:none}}
