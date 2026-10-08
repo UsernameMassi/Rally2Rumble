@@ -360,7 +360,7 @@
         if (started) return; started = true; SYNC.late = function () { shell(); draw(); };
         shell(); tick(); setInterval(tick, 15000); draw();
         if (page === 'pipeline') {
-          if (qs.get('open') && get(qs.get('open'))) drawer(get(qs.get('open')));
+          if (qs.get('open') && get(qs.get('open'))) window.R2R.open(qs.get('open'));
           var sid = qs.get('sent'), s = sid && get(sid);
           if (s) modal('<div class="modal center"><div class="ok">\u2713</div><h2>Message sent</h2><p class="mute">' + esc(s.name) + '</p><div class="card" style="text-align:left"><div class="split"><small>Status</small><span class="pill dark">Approached</span></div><div class="split" style="margin-top:8px"><small>Reminder</small><small>Follow up in 7 days</small></div></div><button class="block" onclick="R2R.close()">View in pipeline</button><a class="btn ghost block" href="find.html">Find another sponsor</a></div>');
         }
