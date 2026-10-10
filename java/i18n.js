@@ -125,7 +125,8 @@
       b.addEventListener('click', function () { set(l[0]); }); d.appendChild(b);
     });
     var h = document.querySelector('header');
-    if (h) h.appendChild(d); else { d.className += ' fixed'; document.body.appendChild(d); }
+    if (h) h.appendChild(d);   /* 4th part of the header: logo | menu | log in / sign up | languages, spread evenly like before */
+    else { d.className += ' fixed'; document.body.appendChild(d); }
   }
 
   root.R2R_LANG = lang;

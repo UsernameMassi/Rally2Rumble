@@ -1,0 +1,95 @@
+/* Rally2Rumble - phone layout. Load LAST (after theme.css and the page's own css). Only changes things on small screens,
+   plus one header fix. Breakpoints: 820px = app pages (dashboard, find, pipeline...), 700px = tables become cards. */
+
+/* the header may wrap (login/signup have no nav2 and could overflow on phones); on desktop it keeps its edge-to-edge layout */
+header{flex-wrap:wrap;gap:10px 14px}
+
+@media(max-width:820px){
+  html,body{max-width:100%;overflow-x:clip}   /* safety net: nothing may push the page sideways */
+
+  /* ----- app shell: compact top bar (logo + account on one row, the menu scrolls sideways below it) ----- */
+  .app{width:100%}
+  .app>#view,.app>aside{width:100%;min-width:0;max-width:100%!important}
+  aside{flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:10px 14px}
+  aside .brand{order:1;flex:1 1 auto;margin:0}
+  aside .brand img,aside .brand svg{max-height:38px;width:auto}
+  aside .who{order:2;flex:0 1 auto;min-width:0;font-size:14px}
+  aside .who>:first-child{min-width:0;max-width:44vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  aside .evt{display:none}
+  aside .nav{order:3;flex:1 1 100%;display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;margin:0 -14px;padding:0 14px;border-top:1px solid var(--line)}
+  aside .nav::-webkit-scrollbar{display:none}
+  .nav a{flex:none;white-space:nowrap;padding:11px 12px;font-size:15px;border-left:0;border-bottom:3px solid transparent}
+  .nav a.on{border-bottom-color:var(--accent)}
+  #view{padding:16px 14px 40px}
+  .top h2{font-size:32px}
+  .top>button,.top>a.btn{width:100%;text-align:center}
+  .top p{font-size:14px}
+
+  /* ----- blocks ----- */
+  .stats,.plstats{grid-template-columns:repeat(2,1fr);gap:10px}
+  .stats>:last-child:nth-child(odd),.plstats>:last-child:nth-child(odd){grid-column:1/-1}
+  .stat{padding:12px}
+  .big{font-size:34px}
+  .item{flex-wrap:wrap;padding:12px}
+  .split{flex-wrap:wrap;gap:8px}
+  .card{padding:14px}
+  .row>button,.row>.btn{flex:1 1 auto;text-align:center}
+  .pltools input{flex:1 1 100%;max-width:none}
+  .pltools select{flex:1 1 auto}
+  .r2{grid-template-columns:1fr}
+  .modal{padding:18px}
+  .drawer{padding:16px}
+
+  /* Find sponsors: filters first as one-line scrollers, results below */
+  .find{display:flex;flex-direction:column;gap:14px}
+  .find>*{min-width:0;max-width:100%}
+  .find>.card{order:-1}
+  .find .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:4px;margin-bottom:10px}
+  .find .chips::-webkit-scrollbar{display:none}
+  .chip{flex:none;white-space:nowrap}
+
+  /* Pipeline board scrolls sideways INSIDE itself (one column ~ one screen) */
+  .plboard{max-width:100%;grid-auto-columns:minmax(250px,82%);scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}
+  .plcol{scroll-snap-align:start}
+
+  /* floating buttons no longer cover the content: they sit at the end of the page */
+  .themebtn{position:static;display:block;margin:18px auto 16px}
+  .r2r-lang.fixed{position:static!important;display:flex;justify-content:center;margin:24px auto 0}
+  /* outlined buttons: theme.css re-applies the slanted cut after style.css removed it, which hides their side borders */
+  button.ghost,.btn.ghost{clip-path:none}
+}
+
+/* ----- tables become cards on phones (labels are added by java/mobile.js) ----- */
+@media(max-width:700px){
+  .wrap{overflow:visible}
+  .tbl{min-width:0;border:0;background:transparent}
+  .tbl,.tbl tbody{display:block}
+  .tbl tr{display:block;position:relative;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);padding:12px 14px;margin-bottom:10px}
+  .tbl td{display:flex;justify-content:space-between;align-items:center;gap:12px;border:0;padding:5px 0;text-align:right;min-width:0}
+  .tbl td[data-label]::before{content:attr(data-label);flex:none;color:var(--mute);font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;text-align:left}
+  .tbl td:first-child{justify-content:flex-start;text-align:left;font-size:17px;padding-top:0}
+  .tbl td:first-child::before{display:none}
+  .tbl td:not([data-label]):not(:first-child){justify-content:flex-start;flex-wrap:wrap;gap:8px}
+  .tbl .bar{width:90px}
+  .tbl select{width:auto;max-width:60%}
+  /* header row: hidden, except when the columns can be sorted (then they are small chips) */
+  .tbl tr:first-child:has(th){display:none}
+  .tbl.m-sort tr:first-child:has(th){display:flex;flex-wrap:wrap;gap:6px;background:none;border:0;padding:0;margin-bottom:12px}
+  .tbl.m-sort th{padding:6px 14px;font-size:12px;border-radius:99px;background:var(--panel);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line);border:0}
+  .tbl.m-sort th:empty{display:none}
+
+  /* Discover: tick box top-right, company name as card title */
+  .dtbl td:first-child{position:absolute;top:10px;right:12px;padding:0;width:auto}
+  .dtbl td:nth-child(2){display:block;text-align:left;font-size:17px;padding:0 36px 6px 0}
+  .dtbl .why{max-width:none;margin:4px 0}
+  .dtbl td:last-child{padding-top:10px}
+}
+
+@media(max-width:480px){
+  main{padding:18px 14px 48px}
+  .page-top{padding:24px 0 6px}
+  form{padding:20px 16px;margin:16px auto}
+  .hero{padding:40px 0 28px}
+  .lead{font-size:16px}
+  .kw input{max-width:none;flex:1 1 100%}
+}
