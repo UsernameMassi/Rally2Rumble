@@ -118,14 +118,14 @@
     var d = new Date(), t = [d.getHours(), d.getMinutes(), d.getSeconds()].map(function (n) { return (n < 10 ? '0' : '') + n; }).join(':');
     LOG.push({ t: t, m: String(m), lv: lv || '' }); if (LOG.length > 400) LOG.splice(0, LOG.length - 400);
     var e = document.getElementById('dcon');
-    if (e) { e.insertAdjacentHTML('beforeend', lineHtml(LOG[LOG.length - 1])); while (e.children.length > 400) e.removeChild(e.firstChild); e.scrollTop = e.scrollHeight; var n = document.getElementById('dcn'); if (n) n.textContent = LOG.length + ' lines'; }
+    if (e) { if (LOG.length === 1) e.innerHTML = ''; e.insertAdjacentHTML('beforeend', lineHtml(LOG[LOG.length - 1])); while (e.children.length > 400) e.removeChild(e.firstChild); e.scrollTop = e.scrollHeight; var n = document.getElementById('dcn'); if (n) n.textContent = LOG.length + ' lines'; }
   }
-  function conHtml() {
+  function conHtml() {                                                 // lives inside "More options"; shows the output of the current search
     if (!isAdmin()) return '';
     setTimeout(function () { var e = document.getElementById('dcon'); if (e) e.scrollTop = e.scrollHeight; }, 0);
-    return '<details class="dc-con"' + (D.con === false ? '' : ' open') + ' ontoggle="R2R_D.con(this.open)"><summary>Console <span class="dc-con-n" id="dcn">' + LOG.length + ' lines</span></summary>' +
-      '<div class="dc-term" id="dcon" role="log" aria-label="Search console (read only)" tabindex="0">' + LOG.map(lineHtml).join('') + '</div>' +
-      '<div class="dc-con-bar"><span class="mute">Read only</span><span class="dc-sp"></span><button type="button" class="ghost sm" onclick="R2R_D.copyLog()">Copy</button><button type="button" class="ghost sm" onclick="R2R_D.clearLog()">Clear</button></div></details>';
+    return '<div class="dc-sec"><div class="lbl">Console <span class="dc-con-n" id="dcn">' + LOG.length + ' lines</span></div>' +
+      '<div class="dc-term" id="dcon" role="log" aria-label="Search console (read only)" tabindex="0">' + (LOG.length ? LOG.map(lineHtml).join('') : '<div class="l"><span></span>Waiting for a search. Press Find companies.</div>') + '</div>' +
+      '<div class="dc-con-bar"><span class="mute">Read only \u00b7 shows the current search</span><span class="dc-sp"></span><button type="button" class="ghost sm" onclick="R2R_D.copyLog()">Copy</button><button type="button" class="ghost sm" onclick="R2R_D.clearLog()">Clear</button></div></div>';
   }
   function stop() {                                                    // cancel whatever is running: network requests, waiting timers and late answers
     if (!D.busy) return;
@@ -365,6 +365,7 @@
     if (!D.cats.length) { D.err = 'Pick at least one type of business.'; C.draw(); return; }
     var seq = ++D.seq, key = qkey(), cached = force ? null : cacheGet(key), saved = {};
     D.busy = 'search'; D.stage = 1; D.light = 'busy'; D.phase = 'Checking your saved companies\u2026'; D.err = ''; D.msg = ''; D.picked = {}; D.shown = PAGE; D.weak = false; D.results = []; D.ai = {}; D.known = {}; D.knownN = 0; C.draw();
+    LOG.length = 0; var ce = document.getElementById('dcon'); if (ce) ce.innerHTML = '';
     log('Search: ' + D.city + (D.city === ALL ? '' : ' (' + D.radius + ' km)') + ' \u00b7 ' + D.cats.map(function (c) { return LAB[c]; }).join(', ') + (force ? ' \u00b7 fresh' : ''), 'ok');
     var probeP = probe();
     var aiP = aiLoadAll().then(function () { if (seq === D.seq) { applyAi(); if (!D.busy || D.results.length) drawList(); } });
@@ -532,8 +533,8 @@
       (D.err ? '<div class="dc-alert err" role="alert">' + esc(D.err) + '</div>' : '') + (D.msg ? '<div class="dc-alert">' + esc(D.msg) + '</div>' : '') +
       '<div class="card dc-search"><div class="dc-form"><select aria-label="City" onchange="R2R_D.city(this.value)">' + cityOpts + '</select>' + (D.city === ALL ? '' : '<select aria-label="Distance" onchange="R2R_D.radius(this.value)">' + radiusOpts + '</select>') +
       '<div class="dc-actions">' + (busy ? '<button type="button" class="ghost dc-stop" onclick="R2R_D.stop()">Stop</button>' : '') + '<button type="button" class="dc-go" onclick="R2R_D.search()"' + (busy ? ' disabled' : '') + '>' + (busy === 'search' ? 'Searching\u2026' : 'Find companies') + '</button></div></div>' +
-      '<div class="dc-types"><div class="chips">' + cats + '</div></div>' + statusHtml() + '</div>' + conHtml() +
-      '<details class="dc-more"' + (D.more ? ' open' : '') + ' ontoggle="R2R_D.opts(this.open)"><summary>More options</summary>' +
+      '<div class="dc-types"><div class="chips">' + cats + '</div></div>' + statusHtml() + '</div>' +
+      '<details class="dc-more"' + (D.more ? ' open' : '') + ' ontoggle="R2R_D.opts(this.open)"><summary>More options' + (isAdmin() && busy ? ' <span class="dc-con-n">\u00b7 console running</span>' : '') + '</summary>' + conHtml() +
       '<div class="dc-sec"><div class="lbl">Map data server</div><div class="dc-sel"><select id="ds" aria-label="Map data server" onchange="R2R_D.server(this.value)">' + srvOpts + '</select><button type="button" class="ghost sm" onclick="R2R_D.again()"' + (busy ? ' disabled' : '') + '>Search again (newest data)</button></div>' +
       '<p class="mute dc-hint">Automatic checks which free OpenStreetMap server has room right now and falls back to the others when one is busy.</p></div>' +
       '<div class="dc-sec"><div class="lbl">AI ranking (optional)</div><div class="dc-sel"><input id="gk" type="password" aria-label="Gemini API key" value="' + esc(cf.key) + '" placeholder="Gemini API key (free from Google AI Studio)"><input id="gm" aria-label="Model" value="' + esc(cf.model) + '" style="max-width:240px">' +
@@ -613,7 +614,6 @@
     pick: function (id) { if (D.picked[id]) delete D.picked[id]; else D.picked[id] = 1; updSel(); },
     server: function (v) { D.server = v; savePrefs(); },
     stop: stop,
-    con: function (open) { D.con = !!open; },
     clearLog: function () { LOG.length = 0; var e = document.getElementById('dcon'); if (e) e.innerHTML = ''; var n = document.getElementById('dcn'); if (n) n.textContent = '0 lines'; },
     copyLog: function () { var t = LOG.map(function (l) { return l.t + ' ' + l.m; }).join('\n'); if (navigator.clipboard) navigator.clipboard.writeText(t).then(function () { log('Console copied to clipboard.'); }, function () {}); },
     all: function () { view().list.slice(0, D.shown).forEach(function (r) { D.picked[r.id] = 1; }); drawList(); },
