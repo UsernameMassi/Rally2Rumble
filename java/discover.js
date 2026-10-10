@@ -5,7 +5,7 @@
    HOW IT WORKS (short)
    1. Every company gets a free local FIT score (0-100) from keywords, business type, distance and contact details.
    2. Companies that were found before come from your shared Supabase list, so results appear at once. OpenStreetMap is only
-      asked for new ones (and the request is sent to up to 3 free servers, the first answer wins).
+      asked for new ones (split into small searches; the least busy free server is picked automatically, with fallbacks).
    3. New companies are saved to Supabase (table found_companies) for everybody on the team.
    4. The AI (optional) only looks at the best companies nobody has checked yet. Its answers are saved too (table company_ai).
    Set up the two tables once with supabase-found.sql.
@@ -39,7 +39,7 @@
 
   /* ---------- settings ---------- */
   var DEFAULT_MODEL = 'gemini-2.5-flash-lite';
-  var ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+  var ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.openstreetmap.fr/api/interpreter'];
   var CACHE_VER = 'v4', SEARCH_HOURS = 12, AI_DAYS = 60, BATCH = 25, PAGE = 30, MIN_FIT = 12;
   var DEFAULT_EXCLUDE = 'shell, bp, total, esso, tango, tinq, texaco, q8, avia, tankstation, tamoil, gulf, argos, lukoil, firezone, tank, benzine, mcdonald, kfc, pizza hut, starbucks, new york pizza, burger king, subway, domino, lidl, aldi, albert heijn, jumbo, gamma, praxis';
 
@@ -92,10 +92,10 @@
 
   /* ---------- state ---------- */
   var prefs = C.rd('r2r_disc_prefs', {}) || {};
-  var D = { city: prefs.city || 'Maastricht', radius: prefs.radius || 25, cats: Array.isArray(prefs.cats) && prefs.cats.length ? prefs.cats.filter(function (c) { return CATS[c]; }) : CATNAMES.slice(),
-    results: [], picked: {}, ai: {}, aiAll: null, known: {}, knownN: 0, q: '', shown: PAGE, weak: false, more: false, busy: '', phase: '', msg: '', err: '', cloud: '', cloudErr: '', seq: 0 };
+  var D = { city: prefs.city || 'Maastricht', radius: prefs.radius || 25, server: ENDPOINTS.indexOf(prefs.server) > -1 ? prefs.server : 'auto', srv: '', cats: Array.isArray(prefs.cats) && prefs.cats.length ? prefs.cats.filter(function (c) { return CATS[c]; }) : CATNAMES.slice(),
+    results: [], picked: {}, ai: {}, aiAll: null, known: {}, knownN: 0, q: '', shown: PAGE, weak: false, more: false, busy: '', phase: '', stage: 0, light: '', msg: '', err: '', cloud: '', cloudErr: '', seq: 0 };
   if (!D.cats.length) D.cats = CATNAMES.slice();
-  function savePrefs() { C.wr('r2r_disc_prefs', { city: D.city, radius: D.radius, cats: D.cats }); }
+  function savePrefs() { C.wr('r2r_disc_prefs', { city: D.city, radius: D.radius, cats: D.cats, server: D.server }); }
   function cfg() { var c = C.rd('r2r_gemini', {}); return { key: c.key || '', model: c.model || DEFAULT_MODEL }; }
   function exclude() { var e = C.rd('r2r_exclude', null); return e == null ? DEFAULT_EXCLUDE : e; }
   function clamp(n) { n = Math.round(+n); return isNaN(n) ? 50 : Math.max(0, Math.min(100, n)); }
@@ -106,6 +106,35 @@
     var ev = C.state.event || {}, s = JSON.stringify([ev.name, ev.date, ev.place, CACHE_VER]), h = 5381, i;
     for (i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
     return 'e' + (h >>> 0).toString(36);
+  }
+
+  /* ---------- console (admins see it, nobody can type in it) + stop ---------- */
+  var LOG = [], CANCELS = [];
+  /* Admin = a row in the Supabase 'admins' table. java.js checks this at start-up and keeps the answer in R2R_CORE.sync.admin
+     (it redraws the page when the answer arrives, so the console shows up a moment after loading). */
+  function isAdmin() { return !!(C.sync && C.sync.admin); }
+  function lineHtml(l) { return '<div class="l ' + l.lv + '"><span>' + l.t + '</span> ' + esc(l.m) + '</div>'; }
+  function log(m, lv) {
+    var d = new Date(), t = [d.getHours(), d.getMinutes(), d.getSeconds()].map(function (n) { return (n < 10 ? '0' : '') + n; }).join(':');
+    LOG.push({ t: t, m: String(m), lv: lv || '' }); if (LOG.length > 400) LOG.splice(0, LOG.length - 400);
+    var e = document.getElementById('dcon');
+    if (e) { e.insertAdjacentHTML('beforeend', lineHtml(LOG[LOG.length - 1])); while (e.children.length > 400) e.removeChild(e.firstChild); e.scrollTop = e.scrollHeight; var n = document.getElementById('dcn'); if (n) n.textContent = LOG.length + ' lines'; }
+  }
+  function conHtml() {
+    if (!isAdmin()) return '';
+    setTimeout(function () { var e = document.getElementById('dcon'); if (e) e.scrollTop = e.scrollHeight; }, 0);
+    return '<details class="dc-con"' + (D.con === false ? '' : ' open') + ' ontoggle="R2R_D.con(this.open)"><summary>Console <span class="dc-con-n" id="dcn">' + LOG.length + ' lines</span></summary>' +
+      '<div class="dc-term" id="dcon" role="log" aria-label="Search console (read only)" tabindex="0">' + LOG.map(lineHtml).join('') + '</div>' +
+      '<div class="dc-con-bar"><span class="mute">Read only</span><span class="dc-sp"></span><button type="button" class="ghost sm" onclick="R2R_D.copyLog()">Copy</button><button type="button" class="ghost sm" onclick="R2R_D.clearLog()">Clear</button></div></details>';
+  }
+  function stop() {                                                    // cancel whatever is running: network requests, waiting timers and late answers
+    if (!D.busy) return;
+    var what = D.busy === 'ai' ? 'AI check' : 'Search';
+    D.seq++; CANCELS.slice().forEach(function (f) { f(); });
+    if (D.aiCtl) { try { D.aiCtl.abort(); } catch (e) {} D.aiCtl = null; }
+    D.busy = ''; D.light = ''; D.stage = 0; D.err = '';
+    D.msg = what + ' stopped.' + (D.results.length ? ' The ' + D.results.length + ' companies found so far are kept below.' : '');
+    log(what + ' stopped by user.', 'warn'); C.draw();
   }
 
   /* ---------- clean-up for data that came from the shared list (treated as untrusted) ---------- */
@@ -155,12 +184,14 @@
   function dOf(r) { return { type: r.type, cat: r.cat, city: r.city, addr: r.addr, web: r.web, phone: r.phone, email: r.email, cap: r.cap, wd: r.wd, tt: r.tt, txt: r.txt }; }
 
   /* ---------- OpenStreetMap ---------- */
-  function buildQuery() {
+  /* One small query per business type (plus one for brand names). Small queries finish fast and a busy server only loses one part. */
+  function buildQueries() {
     var AVOID = '["amenity"!~"^(fuel|car_wash|charging_station)$"]', r = D.radius * 1000, ctr = center(), whole = D.city === ALL,
-      around = whole ? '(area.lim);' : '(area.lim)(around:' + r + ',' + ctr.lat + ',' + ctr.lon + ');', parts = [];
-    D.cats.forEach(function (c) { CATS[c].forEach(function (f) { parts.push('nwr["name"]["' + f[0] + '"~"^(' + f[1] + ')$"]' + (f[2] || '') + AVOID + around); }); });
-    if (D.cats.indexOf('Automotive') > -1) parts.push('nwr["name"~"' + NAME_TERMS.map(reEsc).join('|') + '",i]' + AVOID + around);
-    return '[out:json][timeout:90];area["ISO3166-2"="NL-LI"][admin_level=4]->.lim;(' + parts.join('') + ');out center tags qt ' + (whole ? 3000 : 1500) + ';';
+      around = whole ? '(area.lim);' : '(area.lim)(around:' + r + ',' + ctr.lat + ',' + ctr.lon + ');', lim = whole ? 2500 : 1500, out = [];
+    function mk(label, parts) { out.push({ label: label, q: '[out:json][timeout:50];area["ISO3166-2"="NL-LI"][admin_level=4]->.lim;(' + parts.join('') + ');out center tags qt ' + lim + ';' }); }
+    D.cats.forEach(function (c) { mk(LAB[c], CATS[c].map(function (f) { return 'nwr["name"]["' + f[0] + '"~"^(' + f[1] + ')$"]' + (f[2] || '') + AVOID + around; })); });
+    if (D.cats.indexOf('Automotive') > -1) mk('Car brands by name', ['nwr["name"~"' + NAME_TERMS.map(reEsc).join('|') + '",i]' + AVOID + around]);
+    return out;
   }
   var NOISE = /^(source|opening_hours|check_date|survey|wheelchair|addr:|ref|fax|contact:fax|payment:|fhrs|brand:wiki|name:|old_name|note|fixme|operator:|wikipedia|wikidata|phone|contact:phone|email|contact:email|website|contact:website|url|facebook|instagram|contact:)/;
   function textOf(t) {
@@ -195,24 +226,66 @@
     list.forEach(function (r) { var k = r.name.toLowerCase().replace(/[^a-z0-9]/g, '') + '|' + r.city.toLowerCase(); if (!m[k] || r.fit > m[k].fit) m[k] = r; });
     return Object.keys(m).map(function (k) { return m[k]; });
   }
-  /* send the query to up to 3 free servers: the 2nd starts after 6 s, the 3rd after 12 s (or at once when one fails). First good answer wins. */
-  function overpass(q) {
+  /* ---------- servers: check which one is least busy, then race them with fallbacks ---------- */
+  var SRV = {}, FAIL = {}, probeAt = 0;
+  function host(u) { return String(u).replace(/^https?:\/\//, '').split('/')[0]; }
+  function probe() {                                                   // asks each server for its /status page (free slots + speed), at most every 5 minutes
+    if (Date.now() - probeAt < 300000) return Promise.resolve();
+    probeAt = Date.now(); log('Checking which servers are free\u2026');
+    return Promise.all(ENDPOINTS.map(function (u) {
+      var ac = new AbortController(), t0 = Date.now(), tm = setTimeout(function () { ac.abort(); }, 4000);
+      return fetch(u.replace(/interpreter$/, 'status'), { signal: ac.signal, cache: 'no-store' }).then(function (r) {
+        return r.text().then(function (t) { clearTimeout(tm); var m = /(\d+) slots? available now/i.exec(t); SRV[u] = { ms: r.ok ? Date.now() - t0 : 99999, free: r.ok ? (m ? +m[1] : 1) : 0 }; log('  ' + host(u) + ': ' + (r.ok ? (Date.now() - t0) + ' ms, ' + (m ? m[1] + ' free slots' : 'status ok') : 'status HTTP ' + r.status), r.ok && SRV[u].free ? '' : 'warn'); });
+      }).catch(function () { clearTimeout(tm); SRV[u] = { ms: 99999, free: 0 }; log('  ' + host(u) + ': no answer to status check', 'warn'); });
+    }));
+  }
+  function penalty(u) { var s = SRV[u] || { ms: 3000, free: 1 }, p = s.ms; if (!s.free) p += 20000; if (FAIL[u] > Date.now()) p += 60000; return p; }
+  function ordered() {
+    var pref = D.server !== 'auto' ? D.server : '', rest = ENDPOINTS.filter(function (u) { return u !== pref; }).sort(function (a, b) { return penalty(a) - penalty(b); });
+    return pref ? [pref].concat(rest) : rest;
+  }
+  /* best server first; the next one starts after 5 s (or at once when one fails), and so on. First good answer wins. */
+  function overpass(q, label) {
+    var list = ordered();
     return new Promise(function (resolve, reject) {
-      var done = false, next = 0, fails = 0, ctrls = [], timers = [];
-      function finish(fn, v) { if (done) return; done = true; timers.forEach(clearTimeout); ctrls.forEach(function (c) { try { c.abort(); } catch (e) {} }); fn(v); }
-      function fail(e) { if (done) return; fails++; if (fails >= ENDPOINTS.length) finish(reject, e); else launch(); }
+      var done = false, next = 0, fails = 0, ctrls = [], timers = [], notes = [];
+      function finish(fn, v) { if (done) return; done = true; timers.forEach(clearTimeout); ctrls.forEach(function (c) { try { c.abort(); } catch (e) {} }); var i = CANCELS.indexOf(cancel); if (i > -1) CANCELS.splice(i, 1); fn(v); }
+      function cancel() { finish(reject, new Error('stopped')); }
+      CANCELS.push(cancel);
+      function fail(u, e) {
+        if (done) return;
+        FAIL[u] = Date.now() + 120000; fails++;
+        var m = e.timeout ? 'took too long' : e.name === 'TypeError' ? 'not reachable' : e.message;
+        notes.push(host(u) + ' ' + m); log('  ' + host(u) + ' ' + m + (fails < list.length ? ', trying next server' : ''), 'warn');
+        if (fails >= list.length) finish(reject, new Error(notes.join('; '))); else launch();
+      }
       function launch() {
-        if (done || next >= ENDPOINTS.length) return;
-        var i = next++, ac = new AbortController(); ctrls.push(ac); timers.push(setTimeout(function () { ac.abort(); }, 100000));
-        fetch(ENDPOINTS[i], { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(q), signal: ac.signal })
-          .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        if (done || next >= list.length) return;
+        var u = list[next++], ac = new AbortController(), to = false; ctrls.push(ac); timers.push(setTimeout(function () { to = true; ac.abort(); }, 75000));
+        log('  ' + label + ' \u2192 ' + host(u));
+        fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(q), signal: ac.signal })
+          .then(function (r) { if (!r.ok) throw new Error('error ' + r.status); return r.json(); })
           .then(function (j) {
             if (!j || !j.elements) throw new Error('empty answer');
-            if (j.remark && /error|timed out|out of memory/i.test(j.remark) && !j.elements.length) throw new Error('server too busy');
-            finish(resolve, j);
-          }).catch(fail);
+            if (j.remark && /error|timed out|out of memory/i.test(j.remark) && !j.elements.length) throw new Error('too busy');
+            if (done) return; D.srv = host(u); log('  ' + label + ': ' + host(u) + ' answered with ' + j.elements.length + ' results', 'ok'); finish(resolve, j);
+          }).catch(function (e) { if (to) e = { timeout: true }; fail(u, e); });
       }
-      launch(); timers.push(setTimeout(launch, 6000)); timers.push(setTimeout(launch, 12000));
+      launch(); for (var i = 1; i < list.length; i++) timers.push(setTimeout(launch, i * 5000));
+    });
+  }
+  function runParts(parts, seq, onPart) {                              // two searches at a time, results shown as each part arrives
+    var out = [], errs = [], i = 0, done = 0;
+    return new Promise(function (resolve) {
+      function nextJob() {
+        if (i >= parts.length) { if (done >= parts.length) resolve({ els: out, errs: errs }); return; }
+        var p = parts[i++];
+        overpass(p.q, p.label).then(function (j) { out = out.concat(j.elements || []); }, function (e) { errs.push(p.label + ': ' + e.message); if (e.message !== 'stopped') log(p.label + ' failed: ' + e.message, 'err'); }).then(function () {
+          done++; if (seq !== D.seq) { resolve({ els: out, errs: errs, stale: true }); return; }
+          onPart(done, parts.length, out); nextJob();
+        });
+      }
+      for (var k = 0; k < Math.min(2, parts.length); k++) nextJob();
     });
   }
 
@@ -290,12 +363,15 @@
   function inScope(r) { return D.cats.indexOf(r.cat) > -1 && (D.city === ALL || r.km <= D.radius); }
   function search(force) {
     if (!D.cats.length) { D.err = 'Pick at least one type of business.'; C.draw(); return; }
-    var seq = ++D.seq, key = qkey(), cached = force ? null : cacheGet(key);
-    D.busy = 'search'; D.phase = 'Checking your saved companies\u2026'; D.err = ''; D.msg = ''; D.picked = {}; D.shown = PAGE; D.weak = false; D.results = []; D.ai = {}; D.known = {}; D.knownN = 0; C.draw();
+    var seq = ++D.seq, key = qkey(), cached = force ? null : cacheGet(key), saved = {};
+    D.busy = 'search'; D.stage = 1; D.light = 'busy'; D.phase = 'Checking your saved companies\u2026'; D.err = ''; D.msg = ''; D.picked = {}; D.shown = PAGE; D.weak = false; D.results = []; D.ai = {}; D.known = {}; D.knownN = 0; C.draw();
+    log('Search: ' + D.city + (D.city === ALL ? '' : ' (' + D.radius + ' km)') + ' \u00b7 ' + D.cats.map(function (c) { return LAB[c]; }).join(', ') + (force ? ' \u00b7 fresh' : ''), 'ok');
+    var probeP = probe();
     var aiP = aiLoadAll().then(function () { if (seq === D.seq) { applyAi(); if (!D.busy || D.results.length) drawList(); } });
     if (cached) {
       D.results = dedupe(cached.list.map(function (x) { return build(x[0], x[1], x[2], x[3], x[4]); }).filter(inScope));
-      D.busy = ''; D.msg = D.results.length + ' companies from your last search (' + ago(cached.t) + '). Press \u201CSearch again\u201D under More options for the newest data.';
+      log('Used the saved search from ' + ago(cached.t) + ': ' + D.results.length + ' companies. No server was asked.', 'ok');
+      D.busy = ''; D.stage = 3; D.light = 'ok'; D.msg = D.results.length + ' companies from your last search (' + ago(cached.t) + '). Press \u201CSearch again\u201D under More options for the newest data.';
       aiP.then(function () { if (seq === D.seq) { applyAi(); C.draw(); } }); C.draw(); return;
     }
     var dbP = dbLoad().then(function (rows) {
@@ -303,25 +379,40 @@
       var list = [];
       rows.forEach(function (row) { if (!okId(row.id) || !row.d || typeof row.d !== 'object') return; D.known[row.id] = 1; D.knownN++; var r = build(row.id, row.name, +row.lat, +row.lon, row.d); if (inScope(r)) list.push(r); });
       if (list.length) { D.results = dedupe(list); applyAi(); D.phase = D.results.length + ' saved companies shown. Looking for new ones\u2026'; }
-      else D.phase = 'Searching OpenStreetMap (the first search can take a minute)\u2026';
-      chip(); C.draw();
+      else D.phase = 'Searching OpenStreetMap\u2026';
+      D.results.forEach(function (r) { saved[r.id] = r; });
+      log(cloud() ? 'Shared list: ' + D.knownN + ' companies known, ' + list.length + ' inside this area.' : 'Shared list is off (not logged in to the cloud).');
+      D.stage = 2; chip(); C.draw();
     });
-    dbP.then(function () {
-      return overpass(buildQuery()).then(function (j) {
-        if (seq !== D.seq) return;
-        var fresh = parse(j.elements || []), before = D.results.length, map = {};
-        D.results.forEach(function (r) { map[r.id] = r; }); fresh.forEach(function (r) { map[r.id] = r; });
+    dbP.then(function () { return probeP; }).then(function () {
+      if (seq !== D.seq) return;
+      var parts = buildQueries();
+      log('Asking OpenStreetMap: ' + parts.length + ' small searches (' + parts.map(function (p) { return p.label; }).join(', ') + ')');
+      return runParts(parts, seq, function (n, total, els) {
+        var map = {}; Object.keys(saved).forEach(function (k) { map[k] = saved[k]; }); parse(els).forEach(function (r) { map[r.id] = r; });
+        D.results = dedupe(Object.keys(map).map(function (k) { return map[k]; }));
+        D.phase = 'Searching OpenStreetMap\u2026 ' + n + ' of ' + total + ' parts done'; log('Progress: ' + n + ' of ' + total + ' parts done, ' + D.results.length + ' companies so far'); applyAi(); C.draw();
+      }).then(function (res) {
+        if (seq !== D.seq || res.stale) return;
+        var before = Object.keys(saved).length, failed = res.errs.length, total = parts.length;
+        if (failed >= total) {
+          D.busy = ''; D.light = D.results.length ? 'warn' : 'err'; log('All searches failed. Nothing new from OpenStreetMap.', 'err');
+          var why = res.errs[0].replace(/^[^:]+: /, '');
+          if (D.results.length) D.msg = 'OpenStreetMap is busy, so these are your saved companies only (' + why + '). Try again in a minute for new ones.';
+          else D.err = 'Could not reach OpenStreetMap (' + why + '). All ' + ENDPOINTS.length + ' free servers were tried. Try again in a minute, pick a smaller area, or choose another server under More options.';
+          C.draw(); return;
+        }
+        var fresh = parse(res.els), map = {};
+        Object.keys(saved).forEach(function (k) { map[k] = saved[k]; }); fresh.forEach(function (r) { map[r.id] = r; });
         D.results = dedupe(Object.keys(map).map(function (k) { return map[k]; }));
         var isNew = fresh.filter(function (r) { return !D.known[r.id] && r.kscore > 0; }).length;
-        D.busy = ''; applyAi(); D.msg = D.results.length + ' companies' + (isNew ? ', ' + isNew + ' new' : '') + (before && !isNew ? ' (nothing new since last time)' : '') + '. Best matches first.'; C.draw();
-        cacheSet(key, D.results);
-        dbSave(D.results).then(function (n) { if (seq === D.seq && n) { D.msg += ' ' + n + ' new saved to the shared list.'; C.draw(); } });
-      }, function (e) {
-        if (seq !== D.seq) return;
-        D.busy = '';
-        if (D.results.length) D.msg = 'OpenStreetMap is busy, so these are your saved companies only (' + e.message + '). Try again in a minute for new ones.';
-        else D.err = 'Could not reach OpenStreetMap (' + e.message + '). The free servers can be busy. Try again in a minute, or pick a smaller area.';
+        D.busy = ''; D.stage = 3; D.light = failed ? 'warn' : 'ok'; applyAi();
+        D.msg = D.results.length + ' companies' + (isNew ? ', ' + isNew + ' new' : '') + (before && !isNew ? ' (nothing new since last time)' : '') + '. Best matches first.' + (D.srv ? ' Server: ' + D.srv + '.' : '') +
+          (failed ? ' ' + failed + ' of ' + total + ' parts failed, so the list may be incomplete. Press \u201CSearch again\u201D in a minute.' : '');
+        log('Done: ' + D.results.length + ' companies' + (isNew ? ', ' + isNew + ' new' : '') + (failed ? ', ' + failed + ' parts failed (not cached)' : ', cached for ' + SEARCH_HOURS + ' h') + '.', failed ? 'warn' : 'ok');
         C.draw();
+        if (!failed) cacheSet(key, D.results);
+        dbSave(D.results).then(function (n) { if (n) log('Saved ' + n + ' new companies to the shared list.', 'ok'); if (seq === D.seq && n) { D.msg += ' ' + n + ' new saved to the shared list.'; C.draw(); } });
       });
     });
   }
@@ -350,19 +441,21 @@
     var a = D.ai[r.id], s = sc(r), val = a ? a.value : r.value, done = C.state.sponsors.some(function (x) { return x.id === r.id; });
     var why = a ? a.reason : (r.hits.length ? 'Matches: ' + r.hits.slice(0, 4).join(', ') : ''), sub = [r.type, r.city, D.city === ALL ? '' : Math.round(r.km) + ' km'].filter(Boolean).map(esc).join(' \u00b7 ');
     return '<div class="dc-item' + (done ? ' done' : '') + '"><label class="dc-pick"><input type="checkbox" ' + (D.picked[r.id] ? 'checked ' : '') + 'onchange="R2R_D.pick(\'' + r.id + '\')" aria-label="Select ' + esc(r.name) + '"></label>' +
-      '<div class="dc-main"><b>' + esc(r.name) + '</b>' + (a ? ' <span class="pill dark" title="Checked by AI">AI</span>' : '') + '<small>' + sub + '</small>' + (why ? '<span class="why">' + esc(why) + '</span>' : '') +
-      '<span class="dc-links">' + (r.web ? '<a href="' + esc(r.web) + '" target="_blank" rel="noopener noreferrer">website</a>' : '') + '<a href="' + r.osm + '" target="_blank" rel="noopener noreferrer">map</a>' + (r.phone ? '<span>' + esc(r.phone) + '</span>' : '') + '</span></div>' +
-      '<div class="dc-fit" title="How well this company fits the rally"><b>' + s + '%</b><div class="bar"><i style="width:' + s + '%"></i></div><span class="pill v-' + val + '" title="Estimated sponsor value">' + val + '</span></div>' +
+      '<div class="dc-main"><div class="dc-name"><b>' + esc(r.name) + '</b>' + (a ? '<span class="pill dark" title="Checked by AI">AI</span>' : '') + '</div><small>' + sub + '</small>' + (why ? '<span class="why">' + esc(why) + '</span>' : '') +
+      '<span class="dc-links">' + (r.web ? '<a href="' + esc(r.web) + '" target="_blank" rel="noopener noreferrer">Website</a>' : '') + '<a href="' + r.osm + '" target="_blank" rel="noopener noreferrer">Map</a>' + (r.phone ? '<span>' + esc(r.phone) + '</span>' : '') + '</span></div>' +
+      '<div class="dc-fit" title="How well this company fits the rally"><b>' + s + '%</b><div class="bar"><i style="width:' + s + '%"></i></div><span class="dc-val" title="Estimated sponsor value">' + val + ' value</span></div>' +
       '<div class="dc-act">' + (done ? '<span class="pill hi">Added</span>' : '<button type="button" class="sm" onclick="R2R_D.add(\'' + r.id + '\')">Add</button>') + '<button type="button" class="ghost sm" onclick="R2R_D.mail(\'' + r.id + '\')">Email</button></div></div>';
   }
   function listHtml() {
     var v = view(), vis = v.list.slice(0, D.shown);
-    if (!vis.length) return '<div class="dc-empty">' + (D.busy ? '' : 'Nothing matches. Try another area, other business types or a different filter.') + '</div>' + (v.hidden ? '<button type="button" class="ghost sm" onclick="R2R_D.weak()">Show ' + v.hidden + ' weaker matches</button>' : '');
+    if (!vis.length) return '<div class="dc-empty">' + (D.busy ? 'Searching\u2026' : 'Nothing matches. Try another area, other business types or a different filter.') + '</div>' + (v.hidden ? '<button type="button" class="ghost sm" onclick="R2R_D.weak()">Show ' + v.hidden + ' weaker matches</button>' : '');
     return '<div class="dc-list">' + vis.map(row).join('') + '</div>' +
-      '<div class="row" style="margin-top:12px">' + (v.list.length > D.shown ? '<button type="button" class="ghost" onclick="R2R_D.rows()">Show more (' + (v.list.length - D.shown) + ')</button>' : '') +
+      '<div class="dc-foot">' + (v.list.length > D.shown ? '<button type="button" class="ghost" onclick="R2R_D.rows()">Show more (' + (v.list.length - D.shown) + ')</button>' : '') +
       (v.hidden && !D.weak ? '<button type="button" class="ghost sm" onclick="R2R_D.weak()">Show ' + v.hidden + ' weaker matches</button>' : '') + '</div>';
   }
-  function drawList() { var e = document.getElementById('dlist'); if (e) e.innerHTML = listHtml(); var n = document.getElementById('dcount'); if (n) n.textContent = countText(); }
+  function selLabel() { var n = Object.keys(D.picked).length; return n ? ' (' + n + ')' : ''; }
+  function updSel() { var b = document.getElementById('dadd'); if (b) b.textContent = 'Add selected' + selLabel(); }
+  function drawList() { var e = document.getElementById('dlist'); if (e) e.innerHTML = listHtml(); var n = document.getElementById('dcount'); if (n) n.textContent = countText(); updSel(); }
   function countText() { var v = view(), a = v.list.filter(function (r) { return D.ai[r.id]; }).length; return v.list.length + ' companies' + (a ? ' \u00b7 ' + a + ' AI-checked' : ''); }
 
   /* ---------- AI (Gemini) ---------- */
@@ -381,8 +474,8 @@
       'Answer ONLY a JSON array like [{"i":0,"m":80,"v":"medium","r":"max 15 words, cite only the data"}] where m = fit 0-100 and v = low, medium or high (sponsor value guess).',
       lines
     ].join('\n');
-    D.busy = 'ai'; D.err = ''; C.draw();
-    fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(cf.model) + ':generateContent', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cf.key },
+    D.busy = 'ai'; D.light = 'busy'; D.err = ''; D.aiCtl = new AbortController(); log('AI: asking ' + cf.model + ' to rank ' + l.length + ' companies\u2026'); C.draw();
+    fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(cf.model) + ':generateContent', { method: 'POST', signal: D.aiCtl.signal, headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cf.key },
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0, maxOutputTokens: 3000, responseMimeType: 'application/json' } }) })
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error((j.error && j.error.message) || ('HTTP ' + r.status)); return j; }); })
       .then(function (j) {
@@ -390,9 +483,10 @@
         arr.forEach(function (a) { var r = l[a.i]; if (!r) return; fresh[r.id] = cleanAi(a); });
         Object.keys(fresh).forEach(function (id) { D.ai[id] = fresh[id]; D.aiAll[id] = fresh[id]; });
         aiLocalSave(); aiSaveCloud(fresh);
-        D.busy = ''; D.msg = 'AI checked ' + Object.keys(fresh).length + ' companies' + (cloud() && D.cloud !== 'missing' ? ' and saved the answers for your team' : '') + '. Read the reasons before you contact anyone.'; C.draw();
+        D.aiCtl = null; log('AI: checked ' + Object.keys(fresh).length + ' companies.', 'ok');
+        D.busy = ''; D.light = 'ok'; D.msg = 'AI checked ' + Object.keys(fresh).length + ' companies' + (cloud() && D.cloud !== 'missing' ? ' and saved the answers for your team' : '') + '. Read the reasons before you contact anyone.'; C.draw();
       })
-      .catch(function (e) { D.busy = ''; D.err = 'Gemini error: ' + e.message + ' (Invalid key? Make a new one in Google AI Studio. Quota or 429? Wait a minute.)'; C.draw(); });
+      .catch(function (e) { if (e && e.name === 'AbortError') return; D.aiCtl = null; log('AI error: ' + e.message, 'err'); D.busy = ''; D.light = 'err'; D.err = 'Gemini error: ' + e.message + ' (Invalid key? Make a new one in Google AI Studio. Quota or 429? Wait a minute.)'; C.draw(); });
   }
 
   /* ---------- add to the sponsor list ---------- */
@@ -409,28 +503,46 @@
     C.save(); D.picked = {}; D.msg = n + ' added to your pipeline.'; C.draw();
   }
 
+  /* ---------- status: traffic light + progress steps ---------- */
+  function statusHtml() {
+    var busy = D.busy, light = 'busy', label, steps = '';
+    if (!busy) return '';                                              // when finished, the message above the search box says what happened
+    if (busy === 'search') label = D.phase; else if (busy === 'ai') label = 'AI is checking the best matches\u2026';
+    else if (D.err) label = 'Something went wrong'; else if (light === 'ok') label = 'Done'; else if (light === 'warn') label = 'Done with a warning'; else label = '';
+    if (!label) return '';
+    if (D.stage && (busy === 'search' || light !== 'busy')) {
+      steps = '<ol class="dc-steps2">' + ['Saved list', 'OpenStreetMap', 'Done'].map(function (t, i) {
+        var n = i + 1, c = D.stage > n || (D.stage === 3 && n === 3) ? 'done' : D.stage === n ? 'now' : '';
+        return '<li class="' + c + '">' + t + '</li>';
+      }).join('') + '</ol>';
+    }
+    return '<div class="dc-status ' + light + '" role="status" aria-live="polite"><div class="dc-line"><span class="dc-dot"></span><span>' + esc(label) + '</span></div>' +
+      (busy ? '<div class="dc-prog"><i></i></div>' : '') + steps + '</div>';
+  }
+
   /* ---------- page ---------- */
   P.discover = function () {
     var cf = cfg(), busy = D.busy, hasRes = D.results.length > 0;
     var cats = CATNAMES.map(function (n, i) { return '<button type="button" class="chip' + (D.cats.indexOf(n) > -1 ? ' on' : '') + '" title="' + esc(HINT[n]) + '" onclick="R2R_D.cat(' + i + ')">' + esc(LAB[n]) + '</button>'; }).join('');
     var cityOpts = [ALL].concat(CITIES.map(function (c) { return c[0]; })).map(function (n) { return '<option' + (n === D.city ? ' selected' : '') + '>' + n + '</option>'; }).join('');
     var radiusOpts = [5, 10, 25, 35, 50].map(function (v) { return '<option value="' + v + '"' + (v === D.radius ? ' selected' : '') + '>within ' + v + ' km</option>'; }).join('');
+    var srvOpts = ['auto'].concat(ENDPOINTS).map(function (u) { return '<option value="' + esc(u) + '"' + (u === D.server ? ' selected' : '') + '>' + (u === 'auto' ? 'Automatic (least busy)' : esc(host(u))) + '</option>'; }).join('');
+    var shared = !cloud() ? 'Log in with a cloud account to share found companies with your team.' : D.cloud === 'missing' ? 'Run supabase-found.sql once in Supabase (SQL editor) to switch the shared list on.' : D.cloud === 'error' ? 'Could not reach the shared list: ' + esc(D.cloudErr) : 'Companies you find are saved for everyone on your team, so the next search is faster.';
     return '<div class="top"><div><h2>Discover companies</h2><p class="mute">Find local companies that could sponsor your rally.</p></div>' + chipHtml() + '</div>' +
-      (D.err ? '<div class="banner">' + esc(D.err) + '</div>' : '') + (D.msg ? '<div class="note">' + esc(D.msg) + '</div>' : '') +
-      '<div class="card dc-steps">' +
-      '<div class="dc-step"><span class="dc-n">1</span><div class="dc-b"><div class="lbl">Where</div><div class="dc-sel"><select aria-label="City" onchange="R2R_D.city(this.value)">' + cityOpts + '</select>' + (D.city === ALL ? '' : '<select aria-label="Distance" onchange="R2R_D.radius(this.value)">' + radiusOpts + '</select>') + '</div></div></div>' +
-      '<div class="dc-step"><span class="dc-n">2</span><div class="dc-b"><div class="lbl">What kind of companies</div><div class="chips">' + cats + '</div></div></div>' +
-      '<div class="dc-step"><span class="dc-n">3</span><div class="dc-b"><button type="button" class="dc-go" onclick="R2R_D.search()"' + (busy ? ' disabled' : '') + '>Find companies</button>' +
-      (busy === 'search' ? ' <span class="spin">' + esc(D.phase) + '</span>' : busy === 'ai' ? ' <span class="spin">AI is checking the best matches\u2026</span>' : '') + '</div></div></div>' +
-      '<details class="card dc-more"' + (D.more ? ' open' : '') + ' ontoggle="R2R_D.opts(this.open)"><summary>More options</summary>' +
-      '<div class="lbl">AI ranking (optional)</div><div class="dc-sel"><input id="gk" type="password" aria-label="Gemini API key" value="' + esc(cf.key) + '" placeholder="Gemini API key (free from Google AI Studio)"><input id="gm" aria-label="Model" value="' + esc(cf.model) + '" style="max-width:240px">' +
+      (D.err ? '<div class="dc-alert err" role="alert">' + esc(D.err) + '</div>' : '') + (D.msg ? '<div class="dc-alert">' + esc(D.msg) + '</div>' : '') +
+      '<div class="card dc-search"><div class="dc-form"><select aria-label="City" onchange="R2R_D.city(this.value)">' + cityOpts + '</select>' + (D.city === ALL ? '' : '<select aria-label="Distance" onchange="R2R_D.radius(this.value)">' + radiusOpts + '</select>') +
+      '<div class="dc-actions">' + (busy ? '<button type="button" class="ghost dc-stop" onclick="R2R_D.stop()">Stop</button>' : '') + '<button type="button" class="dc-go" onclick="R2R_D.search()"' + (busy ? ' disabled' : '') + '>' + (busy === 'search' ? 'Searching\u2026' : 'Find companies') + '</button></div></div>' +
+      '<div class="dc-types"><div class="chips">' + cats + '</div></div>' + statusHtml() + '</div>' + conHtml() +
+      '<details class="dc-more"' + (D.more ? ' open' : '') + ' ontoggle="R2R_D.opts(this.open)"><summary>More options</summary>' +
+      '<div class="dc-sec"><div class="lbl">Map data server</div><div class="dc-sel"><select id="ds" aria-label="Map data server" onchange="R2R_D.server(this.value)">' + srvOpts + '</select><button type="button" class="ghost sm" onclick="R2R_D.again()"' + (busy ? ' disabled' : '') + '>Search again (newest data)</button></div>' +
+      '<p class="mute dc-hint">Automatic checks which free OpenStreetMap server has room right now and falls back to the others when one is busy.</p></div>' +
+      '<div class="dc-sec"><div class="lbl">AI ranking (optional)</div><div class="dc-sel"><input id="gk" type="password" aria-label="Gemini API key" value="' + esc(cf.key) + '" placeholder="Gemini API key (free from Google AI Studio)"><input id="gm" aria-label="Model" value="' + esc(cf.model) + '" style="max-width:240px">' +
       '<button type="button" class="sm" onclick="R2R_D.saveKey()">Save</button><button type="button" class="ghost sm" onclick="R2R_D.clearKey()">Remove key</button></div>' +
-      '<p class="mute dc-hint">The key stays in this browser. Only company names, types and distances go to Google.</p>' +
-      '<div class="lbl">Hide these names</div><div class="kw"><input id="dx" style="max-width:100%;flex:1" aria-label="Names to hide" value="' + esc(exclude()) + '"><button type="button" class="ghost sm" onclick="R2R_D.saveEx()">Save</button><button type="button" class="ghost sm" onclick="R2R_D.resetEx()">Reset</button></div>' +
-      '<div class="lbl">Shared list</div><div class="dc-sel"><button type="button" class="ghost sm" onclick="R2R_D.again()"' + (busy ? ' disabled' : '') + '>Search again (newest data)</button></div>' +
-      '<p class="mute dc-hint">' + (!cloud() ? 'Log in with a cloud account to share found companies with your team.' : D.cloud === 'missing' ? 'Run supabase-found.sql once in Supabase (SQL editor) to switch the shared list on.' : D.cloud === 'error' ? 'Could not reach the shared list: ' + esc(D.cloudErr) : 'Companies you find are saved for everyone on your team, so the next search is faster.') + '</p></details>' +
+      '<p class="mute dc-hint">The key stays in this browser. Only company names, types and distances go to Google.</p></div>' +
+      '<div class="dc-sec"><div class="lbl">Hide these names</div><div class="dc-sel"><input id="dx" aria-label="Names to hide" value="' + esc(exclude()) + '"><button type="button" class="ghost sm" onclick="R2R_D.saveEx()">Save</button><button type="button" class="ghost sm" onclick="R2R_D.resetEx()">Reset</button></div></div>' +
+      '<div class="dc-sec"><div class="lbl">Shared list</div><p class="mute dc-hint">' + shared + '</p></div></details>' +
       (hasRes ? '<div id="dres"><div class="dc-bar"><b id="dcount">' + esc(countText()) + '</b><input id="dq" type="search" placeholder="Filter, e.g. porsche, detailing" aria-label="Filter results" value="' + esc(D.q) + '" oninput="R2R_D.filter(this.value)">' +
-        '<button type="button" class="ghost sm" onclick="R2R_D.rank()"' + (busy ? ' disabled' : '') + '>Rank best with AI</button><button type="button" class="ghost sm" onclick="R2R_D.all()">Select all</button><button type="button" class="sm" onclick="R2R_D.addPicked()">Add selected</button></div>' +
+        '<span class="dc-sp"></span><button type="button" class="ghost sm" onclick="R2R_D.rank()"' + (busy ? ' disabled' : '') + '>Rank with AI</button><button type="button" class="ghost sm" onclick="R2R_D.all()">Select all</button><button type="button" class="sm" id="dadd" onclick="R2R_D.addPicked()">Add selected' + selLabel() + '</button></div>' +
         '<div id="dlist">' + listHtml() + '</div></div>' : (busy ? '' : '<div class="dc-empty">Choose where and what, then press <b>Find companies</b>.</div>'));
   };
 
@@ -498,7 +610,12 @@
     saveEx: function () { C.wr('r2r_exclude', document.getElementById('dx').value); D.msg = 'Hide-list saved.'; C.draw(); },
     resetEx: function () { C.wr('r2r_exclude', DEFAULT_EXCLUDE); D.msg = 'Hide-list reset.'; C.draw(); },
     rank: rank, mail: openMail, mlang: fillMail, mopen: mailOpen, mcopy: mailCopy, mai: mailAI, mclose: closeMail,
-    pick: function (id) { if (D.picked[id]) delete D.picked[id]; else D.picked[id] = 1; },
+    pick: function (id) { if (D.picked[id]) delete D.picked[id]; else D.picked[id] = 1; updSel(); },
+    server: function (v) { D.server = v; savePrefs(); },
+    stop: stop,
+    con: function (open) { D.con = !!open; },
+    clearLog: function () { LOG.length = 0; var e = document.getElementById('dcon'); if (e) e.innerHTML = ''; var n = document.getElementById('dcn'); if (n) n.textContent = '0 lines'; },
+    copyLog: function () { var t = LOG.map(function (l) { return l.t + ' ' + l.m; }).join('\n'); if (navigator.clipboard) navigator.clipboard.writeText(t).then(function () { log('Console copied to clipboard.'); }, function () {}); },
     all: function () { view().list.slice(0, D.shown).forEach(function (r) { D.picked[r.id] = 1; }); drawList(); },
     add: function (id) { add([id]); },
     addPicked: function () { var ids = Object.keys(D.picked); if (!ids.length) { D.err = 'Tick at least one company first.'; C.draw(); return; } add(ids); },
