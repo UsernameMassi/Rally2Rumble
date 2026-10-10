@@ -21,6 +21,14 @@ var SUPABASE_KEY = 'sb_publishable_hlUllOuo20Y_iL-5Cey4Fg_9tky4mSR';
     return fetch(SUPABASE_URL + path, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY }, body: JSON.stringify(body) })
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.msg || j.error_description || j.message || 'Something went wrong. Try again.'); return j; }); });
   }
+  /* keep the login session so java.js can talk to the database as this user (cloud sync, admin page, shared AI answers, Discover) */
+  function keep(j) {
+    try {
+      if (!j || !j.access_token || !j.user) return;
+      localStorage.setItem('r2r_sb', JSON.stringify({ url: SUPABASE_URL, key: SUPABASE_KEY, access: j.access_token, refresh: j.refresh_token,
+        exp: j.expires_at || Math.floor(Date.now() / 1000) + (j.expires_in || 3600), uid: j.user.id }));
+    } catch (e) {}
+  }
   function profile(email, m) { var all = rd(); all[email] = Object.assign(all[email] || {}, { email: email, name: m.name || email, team: m.team || '', pax: m.pax || '' }); wr(all); return all[email]; }
 
   function safe(fn) { return function () { var a = arguments; return new Promise(function (ok) { ok(fn.apply(null, a)); }); }; }
@@ -29,6 +37,7 @@ var SUPABASE_KEY = 'sb_publishable_hlUllOuo20Y_iL-5Cey4Fg_9tky4mSR';
     signup: safe(function (p) {
       if (remote) return api('/auth/v1/signup', { email: p.email, password: p.pw, data: { name: p.name, team: p.team, pax: p.pax } }).then(function (j) {
         if (!j.access_token) return { pending: true };
+        keep(j);
         return profile(p.email, p);
       });
       var all = rd();
@@ -37,7 +46,7 @@ var SUPABASE_KEY = 'sb_publishable_hlUllOuo20Y_iL-5Cey4Fg_9tky4mSR';
       return hash(p.pw, salt).then(function (h) { all[p.email] = { name: p.name, team: p.team, pax: p.pax, email: p.email, salt: salt, hash: h }; wr(all); return all[p.email]; });
     }),
     login: safe(function (email, pw) {
-      if (remote) return api('/auth/v1/token?grant_type=password', { email: email, password: pw }).then(function (j) { return profile(email, j.user.user_metadata || {}); });
+      if (remote) return api('/auth/v1/token?grant_type=password', { email: email, password: pw }).then(function (j) { keep(j); return profile(email, j.user.user_metadata || {}); });
       var u = rd()[email], bad = new Error('Wrong email or password.');
       if (!u) return Promise.reject(bad);
       if (u.pw) { // account made by the old version: check once, then upgrade to a hash
