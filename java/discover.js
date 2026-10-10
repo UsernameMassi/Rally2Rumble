@@ -1,6 +1,7 @@
 /* Rally2Rumble - Discover companies in Limburg.
    Real data: OpenStreetMap (Overpass API, Dutch businesses only). Optional AI ranking: Gemini Flash-Lite.
-   Loaded after java.js. The Gemini key is stored in this browser only.
+   Loaded after java.js. Everything is saved in Supabase (shared list, AI answers, searches done, your settings).
+   Only the Gemini key stays in this browser, because it is a secret.
 
    HOW IT WORKS (short)
    1. Every company gets a free local FIT score (0-100) from keywords, business type, distance and contact details.
@@ -8,7 +9,7 @@
       asked for new ones (split into small searches; the least busy free server is picked automatically, with fallbacks).
    3. New companies are saved to Supabase (table found_companies) for everybody on the team.
    4. The AI (optional) only looks at the best companies nobody has checked yet. Its answers are saved too (table company_ai).
-   Set up the two tables once with supabase-found.sql.
+   Set up the tables once with supabase-found.sql (companies + AI) and supabase-discover.sql (searches + settings).
 
    TUNING GUIDE
    - KEYGROUPS : keyword lists. weight = how much a hit counts. A hit in the company NAME counts extra.
@@ -91,13 +92,14 @@
     'Hospitality': 'Hotels, golf, wellness, wine, catering', 'Restaurants (group lunch)': 'Places that can host 100+ people for lunch' };
 
   /* ---------- state ---------- */
-  var prefs = C.rd('r2r_disc_prefs', {}) || {};
+  var prefs = {};                                                      // your settings come from Supabase (table discover_settings), see settingsLoad()
   var D = { city: prefs.city || 'Maastricht', radius: prefs.radius || 25, server: ENDPOINTS.indexOf(prefs.server) > -1 ? prefs.server : 'auto', srv: '', cats: Array.isArray(prefs.cats) && prefs.cats.length ? prefs.cats.filter(function (c) { return CATS[c]; }) : CATNAMES.slice(),
     results: [], picked: {}, ai: {}, aiAll: null, known: {}, knownN: 0, q: '', shown: PAGE, weak: false, more: false, busy: '', phase: '', stage: 0, light: '', msg: '', err: '', cloud: '', cloudErr: '', seq: 0 };
   if (!D.cats.length) D.cats = CATNAMES.slice();
-  function savePrefs() { C.wr('r2r_disc_prefs', { city: D.city, radius: D.radius, cats: D.cats, server: D.server }); }
+  function savePrefs() { settingsSave(); }
   function cfg() { var c = C.rd('r2r_gemini', {}); return { key: c.key || '', model: c.model || DEFAULT_MODEL }; }
-  function exclude() { var e = C.rd('r2r_exclude', null); return e == null ? DEFAULT_EXCLUDE : e; }
+  var SET = { ex: null, asked: false, t: 0 };                          // SET.ex = your hide-list text (null = default list)
+  function exclude() { return SET.ex == null ? DEFAULT_EXCLUDE : SET.ex; }
   function clamp(n) { n = Math.round(+n); return isNaN(n) ? 50 : Math.max(0, Math.min(100, n)); }
   function cap(s) { s = String(s || ''); return s.charAt(0).toUpperCase() + s.slice(1); }
   function cloud() { return C.sb.on(); }
@@ -289,14 +291,42 @@
     });
   }
 
-  /* ---------- saved search (this browser, 12 hours) ---------- */
-  var SK = 'r2r_found_' + CACHE_VER;
+  /* ---------- searches done (shared in Supabase, table search_log) ----------
+     Nothing is kept on this device: when anybody on the team searched this area in the last 12 hours, the companies come from the shared list. */
   function qkey() { return [D.city, D.city === ALL ? 0 : D.radius, D.cats.slice().sort().join('+')].join('|'); }
-  function cacheGet(k) { var e = (C.rd(SK, {}) || {})[k]; return e && Date.now() - e.t < SEARCH_HOURS * 3600000 ? e : null; }
-  function cacheSet(k, list) {
-    var c = C.rd(SK, {}) || {}; c[k] = { t: Date.now(), list: list.slice().sort(function (a, b) { return b.fit - a.fit; }).slice(0, 500).map(function (r) { return [r.id, r.name, r.lat, r.lon, dOf(r)]; }) };
-    Object.keys(c).sort(function (a, b) { return c[b].t - c[a].t; }).slice(4).forEach(function (x) { delete c[x]; });
-    C.wr(SK, c);
+  function hk(k) { var h = 5381, i; for (i = 0; i < k.length; i++) h = ((h << 5) + h + k.charCodeAt(i)) | 0; return 's' + (h >>> 0).toString(36) + k.length; }
+  function logGet(k) {
+    if (!cloud() || D.cloud === 'missing') return Promise.resolve(null);
+    return C.sb.json('GET', '/rest/v1/search_log?qkey=eq.' + hk(k) + '&select=searched_at').then(function (a) {
+      var t = a && a[0] ? Date.parse(a[0].searched_at) : 0;
+      return t && Date.now() - t < SEARCH_HOURS * 3600000 ? { t: t } : null;
+    }, function (e) { log('Search log unavailable: ' + String((e && e.message) || e).slice(0, 200) + ' (run supabase-discover.sql)', 'warn'); return null; });
+  }
+  function logSet(k) {
+    if (!cloud() || D.cloud === 'missing') return;
+    C.sb.req('POST', '/rest/v1/search_log?on_conflict=qkey', { qkey: hk(k), label: k.slice(0, 200), searched_at: new Date().toISOString() }, { Prefer: 'resolution=merge-duplicates,return=minimal' }).catch(function () {});
+  }
+  /* ---------- your settings (Supabase, table discover_settings: one row per user) ---------- */
+  function settingsLoad() {
+    if (!cloud()) return;
+    var uid = C.sb.s().uid;
+    C.sb.json('GET', '/rest/v1/discover_settings?user_id=eq.' + uid + '&select=data').then(function (a) {
+      var d = (a && a[0] && a[0].data) || {}, p = d.prefs || {};
+      if (p.city && (p.city === ALL || CITIES.some(function (c) { return c[0] === p.city; }))) D.city = p.city;
+      if ([5, 10, 25, 35, 50].indexOf(+p.radius) > -1) D.radius = +p.radius;
+      if (ENDPOINTS.indexOf(p.server) > -1) D.server = p.server;
+      if (Array.isArray(p.cats)) { var c = p.cats.filter(function (x) { return CATS[x]; }); if (c.length) D.cats = c; }
+      if (typeof d.exclude === 'string') SET.ex = d.exclude;
+      if (!D.busy) C.draw();
+    }, function (e) { log('Settings unavailable: ' + String((e && e.message) || e).slice(0, 200) + ' (run supabase-discover.sql)', 'warn'); });
+  }
+  function settingsSave() {
+    if (!cloud()) return;
+    clearTimeout(SET.t);
+    SET.t = setTimeout(function () {
+      C.sb.req('POST', '/rest/v1/discover_settings?on_conflict=user_id', { user_id: C.sb.s().uid, data: { prefs: { city: D.city, radius: D.radius, cats: D.cats, server: D.server }, exclude: SET.ex }, updated_at: new Date().toISOString() },
+        { Prefer: 'resolution=merge-duplicates,return=minimal' }).catch(function () {});
+    }, 600);
   }
   function ago(t) { var m = Math.round((Date.now() - t) / 60000); return m < 60 ? Math.max(1, m) + ' min ago' : Math.round(m / 60) + ' h ago'; }
 
@@ -304,7 +334,7 @@
   function cloudFail(e) { var m = (e && e.message) || String(e); log('Shared list error: ' + m.slice(0, 300), 'err'); D.cloud = /schema cache|does not exist|relation|could not find/i.test(m) ? 'missing' : 'error'; D.cloudErr = m; chip(); }
   function chipHtml() {
     var t, c;
-    if (!cloud()) { c = 'off'; t = 'Saved on this device only'; }
+    if (!cloud()) { c = 'off'; t = 'Not saved: log in with a cloud account'; }
     else if (D.cloud === 'missing') { c = 'warn'; t = 'Shared list: setup needed'; }
     else if (D.cloud === 'error') { c = 'warn'; t = 'Shared list unavailable'; }
     else { c = 'ok'; t = '\u2601 Shared list on' + (D.knownN ? ' \u00b7 ' + D.knownN + ' saved' : ''); }
@@ -335,13 +365,9 @@
     })).then(function (a) { var n = a.reduce(function (x, y) { return x + y; }, 0); D.knownN += n; chip(); return n; });
   }
   function cleanAi(x) { return { match: clamp(x.match != null ? x.match : x.m), value: ['low', 'medium', 'high'].indexOf(x.value || x.v) > -1 ? (x.value || x.v) : 'medium', reason: String(x.reason || x.r || '').slice(0, 160), t: +x.t || Date.now() }; }
-  function aiLocal() {
-    var c = C.rd('r2r_ai_' + CACHE_VER, null), ctx = ctxId(), out = {};
-    if (c && c.ctx === ctx && c.items) Object.keys(c.items).forEach(function (id) { if (Date.now() - c.items[id].t < AI_DAYS * 86400000) out[id] = c.items[id]; });
-    return out;
-  }
-  function aiLocalSave() { var keys = Object.keys(D.aiAll); if (keys.length > 2000) keys.sort(function (a, b) { return D.aiAll[a].t - D.aiAll[b].t; }).slice(0, keys.length - 2000).forEach(function (k) { delete D.aiAll[k]; }); C.wr('r2r_ai_' + CACHE_VER, { ctx: ctxId(), items: D.aiAll }); }
-  function aiLoadAll() {                                               // AI answers: this browser first, then the team's (one request)
+  function aiLocal() { return {}; }                                    // no copy on this device: answers live in Supabase (company_ai)
+  function aiLocalSave() {}
+  function aiLoadAll() {                                               // AI answers: the team's, from Supabase (one request)
     if (D.aiAll) return Promise.resolve();
     D.aiAll = aiLocal();
     if (!cloud() || D.cloud === 'missing') return Promise.resolve();
@@ -365,20 +391,26 @@
   function inScope(r) { return D.cats.indexOf(r.cat) > -1 && (D.city === ALL || r.km <= D.radius); }
   function search(force) {
     if (!D.cats.length) { D.err = 'Pick at least one type of business.'; C.draw(); return; }
-    var seq = ++D.seq, key = qkey(), cached = force ? null : cacheGet(key), saved = {};
+    var seq = ++D.seq, key = qkey(), saved = {};
     D.busy = 'search'; D.stage = 1; D.light = 'busy'; D.phase = 'Checking your saved companies\u2026'; D.err = ''; D.msg = ''; D.picked = {}; D.shown = PAGE; D.weak = false; D.results = []; D.ai = {}; D.known = {}; D.knownN = 0; C.draw();
     LOG.length = 0; var ce = document.getElementById('dcon'); if (ce) ce.innerHTML = '';
     log('Search: ' + D.city + (D.city === ALL ? '' : ' (' + D.radius + ' km)') + ' \u00b7 ' + D.cats.map(function (c) { return LAB[c]; }).join(', ') + (force ? ' \u00b7 fresh' : ''), 'ok');
     var probeP = probe();
     var aiP = aiLoadAll().then(function () { if (seq === D.seq) { applyAi(); if (!D.busy || D.results.length) drawList(); } });
-    if (cached) {
-      D.results = dedupe(cached.list.map(function (x) { return build(x[0], x[1], x[2], x[3], x[4]); }).filter(inScope));
-      log('Used the saved search from ' + ago(cached.t) + ': ' + D.results.length + ' companies. No server was asked.', 'ok');
-      D.busy = ''; D.stage = 3; D.light = 'ok'; D.msg = D.results.length + ' companies from your last search (' + ago(cached.t) + '). Press \u201CSearch again\u201D under More options for the newest data.';
-      aiP.then(function () { if (seq === D.seq) { applyAi(); C.draw(); } }); C.draw();
-      dbLoad().then(function (rows) { rows.forEach(function (row) { if (okId(row.id)) { D.known[row.id] = 1; D.knownN++; } }); chip(); return dbSave(D.results); }).then(function (n) { if (n) { log('Saved ' + n + ' companies from the saved search to the shared list.', 'ok'); if (seq === D.seq) { D.msg += ' ' + n + ' saved to the shared list.'; C.draw(); } } });
-      return;
-    }
+    (force ? Promise.resolve(null) : logGet(key)).then(function (cached) {
+      if (seq !== D.seq) return;
+      return (cached ? dbLoad() : Promise.resolve(null)).then(function (rows0) {
+        if (cached && rows0) {                                          // somebody searched this area recently: the shared list is enough
+          var l0 = [];
+          rows0.forEach(function (row) { if (!okId(row.id) || !row.d || typeof row.d !== 'object') return; D.known[row.id] = 1; D.knownN++; var r = build(row.id, row.name, +row.lat, +row.lon, row.d); if (inScope(r)) l0.push(r); });
+          if (l0.length) {
+            D.results = dedupe(l0);
+            log('Used the shared list (area searched ' + ago(cached.t) + '): ' + D.results.length + ' companies. No server was asked.', 'ok');
+            D.busy = ''; D.stage = 3; D.light = 'ok'; D.msg = D.results.length + ' companies from the shared list (area searched ' + ago(cached.t) + '). Press \u201CSearch again\u201D under More options for the newest data.';
+            chip(); aiP.then(function () { if (seq === D.seq) { applyAi(); C.draw(); } }); C.draw(); return;
+          }
+        }
+        D.known = {}; D.knownN = 0;
     var dbP = dbLoad().then(function (rows) {
       if (seq !== D.seq) return;
       var list = [];
@@ -414,10 +446,12 @@
         D.busy = ''; D.stage = 3; D.light = failed ? 'warn' : 'ok'; applyAi();
         D.msg = D.results.length + ' companies' + (isNew ? ', ' + isNew + ' new' : '') + (before && !isNew ? ' (nothing new since last time)' : '') + '. Best matches first.' + (D.srv ? ' Server: ' + D.srv + '.' : '') +
           (failed ? ' ' + failed + ' of ' + total + ' parts failed, so the list may be incomplete. Press \u201CSearch again\u201D in a minute.' : '');
-        log('Done: ' + D.results.length + ' companies' + (isNew ? ', ' + isNew + ' new' : '') + (failed ? ', ' + failed + ' parts failed (not cached)' : ', cached for ' + SEARCH_HOURS + ' h') + '.', failed ? 'warn' : 'ok');
+        log('Done: ' + D.results.length + ' companies' + (isNew ? ', ' + isNew + ' new' : '') + (failed ? ', ' + failed + ' parts failed (not cached)' : ', shared with the team for ' + SEARCH_HOURS + ' h') + '.', failed ? 'warn' : 'ok');
         C.draw();
-        if (!failed) cacheSet(key, D.results);
+        if (!failed) logSet(key);
         dbSave(D.results).then(function (n) { if (n) log('Saved ' + n + ' new companies to the shared list.', 'ok'); if (seq === D.seq && n) { D.msg += ' ' + n + ' new saved to the shared list.'; C.draw(); } });
+      });
+    });
       });
     });
   }
@@ -527,6 +561,7 @@
 
   /* ---------- page ---------- */
   P.discover = function () {
+    if (!SET.asked) { SET.asked = true; settingsLoad(); }
     var cf = cfg(), busy = D.busy, hasRes = D.results.length > 0;
     var cats = CATNAMES.map(function (n, i) { return '<button type="button" class="chip' + (D.cats.indexOf(n) > -1 ? ' on' : '') + '" title="' + esc(HINT[n]) + '" onclick="R2R_D.cat(' + i + ')">' + esc(LAB[n]) + '</button>'; }).join('');
     var cityOpts = [ALL].concat(CITIES.map(function (c) { return c[0]; })).map(function (n) { return '<option' + (n === D.city ? ' selected' : '') + '>' + n + '</option>'; }).join('');
@@ -612,8 +647,8 @@
     weak: function () { D.weak = true; drawList(); },
     rows: function () { D.shown += PAGE; drawList(); },
     opts: function (open) { D.more = !!open; },
-    saveEx: function () { C.wr('r2r_exclude', document.getElementById('dx').value); D.msg = 'Hide-list saved.'; C.draw(); },
-    resetEx: function () { C.wr('r2r_exclude', DEFAULT_EXCLUDE); D.msg = 'Hide-list reset.'; C.draw(); },
+    saveEx: function () { SET.ex = document.getElementById('dx').value; settingsSave(); D.msg = 'Hide-list saved.'; C.draw(); },
+    resetEx: function () { SET.ex = DEFAULT_EXCLUDE; settingsSave(); D.msg = 'Hide-list reset.'; C.draw(); },
     rank: rank, mail: openMail, mlang: fillMail, mopen: mailOpen, mcopy: mailCopy, mai: mailAI, mclose: closeMail,
     pick: function (id) { if (D.picked[id]) delete D.picked[id]; else D.picked[id] = 1; updSel(); },
     server: function (v) { D.server = v; savePrefs(); },
