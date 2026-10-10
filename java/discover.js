@@ -1,4 +1,4 @@
-/* Rally2Rumble - Discover companies near Maastricht.
+/* Rally2Rumble - Discover companies in Limburg (pick a city or all of Limburg).
    Real data: OpenStreetMap (Overpass API, Dutch businesses only). AI ranking: Gemini Flash-Lite.
    Loaded after java.js. Note: the Gemini key is stored in this browser only.
 
@@ -11,7 +11,21 @@
   var C = window.R2R_CORE, P = window.R2R_P;
   if (!C || !P) return;
   var esc = C.esc;
-  var CENTER = { lat: 50.8514, lon: 5.6910 };               // Maastricht
+  // Cities / regions you can search around. To add a place, add a row: [name, lat, lon].
+  var CITIES = [
+    ['Maastricht', 50.8514, 5.6910], ['Heerlen', 50.8882, 5.9795], ['Valkenburg', 50.8654, 5.8319], ['Sittard-Geleen', 51.0000, 5.8700],
+    ['Landgraaf', 50.9000, 6.0333], ['Stein', 50.9700, 5.7700], ['Venlo', 51.3704, 6.1724], ['Roermond', 51.1942, 5.9870],
+    ['Weert', 51.2517, 5.7064], ['Kerkrade', 50.8657, 6.0625], ['Brunssum', 50.9470, 5.9700], ['Venray', 51.5260, 5.9750],
+    ['Horst aan de Maas', 51.4530, 6.0480], ['Gennep', 51.6970, 5.9710], ['Meerssen', 50.8870, 5.7500], ['Eijsden-Margraten', 50.7770, 5.7090],
+    ['Beek', 50.9400, 5.7960], ['Nederweert', 51.2850, 5.7430], ['Vaals', 50.7700, 6.0170], ['Gulpen-Wittem', 50.8140, 5.8870]
+  ];
+  var ALL = 'All of Limburg', ALL_CENTER = { lat: 51.2, lon: 5.9 };  // the whole Dutch province (OSM ISO3166-2 NL-LI)
+  function center() {
+    if (D.city === ALL) return ALL_CENTER;
+    for (var i = 0; i < CITIES.length; i++) if (CITIES[i][0] === D.city) return { lat: CITIES[i][1], lon: CITIES[i][2] };
+    return { lat: CITIES[0][1], lon: CITIES[0][2] };
+  }
+  function placeText() { return D.city === ALL ? 'Limburg' : D.radius + ' km of ' + D.city; }
   var DEFAULT_MODEL = 'gemini-2.5-flash-lite';
   var ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
   var DEFAULT_EXCLUDE = 'shell, bp, total, esso, tango, tinq, texaco, q8, avia, tankstation, tamoil, gulf, argos, lukoil, firezone, tank, benzine, mcdonald, kfc, pizza hut, starbucks, new york pizza, burger king, subway, domino, lidl, aldi, albert heijn, jumbo, gamma, praxis';
@@ -32,7 +46,7 @@
     'Restaurants (group lunch)': [['amenity', 'restaurant', '["capacity"~"^[1-9][0-9]{2,}$"]'], ['amenity', 'restaurant', '["name"~"zaal|zalen|feest|party|grand caf|brasserie|kasteel|ch.teau|catering|banquet|groeps|hotel",i]'], ['amenity', 'restaurant', '["wikidata"]']]
   };
   var CATNAMES = Object.keys(CATS);
-  var D = { radius: 25, cats: CATNAMES.slice(), groups: KEYGROUPS.map(function (g) { return g.name; }), kw: [], results: [], picked: {}, ai: {}, busy: '', msg: '', err: '' };
+  var D = { city: 'Maastricht', radius: 25, cats: CATNAMES.slice(), groups: KEYGROUPS.map(function (g) { return g.name; }), kw: [], results: [], picked: {}, ai: {}, busy: '', msg: '', err: '' };
 
   function cfg() { var c = C.rd('r2r_gemini', {}); return { key: c.key || '', model: c.model || DEFAULT_MODEL }; }
   function exclude() { var e = C.rd('r2r_exclude', null); return e == null ? DEFAULT_EXCLUDE : e; }
@@ -43,13 +57,14 @@
 
   /* ---------- OpenStreetMap ---------- */
   function buildQuery() {
-    var AVOID = '["amenity"!~"^(fuel|car_wash|charging_station)$"]', r = D.radius * 1000, around = '(area.nl)(around:' + r + ',' + CENTER.lat + ',' + CENTER.lon + ');', parts = [];
+    var AVOID = '["amenity"!~"^(fuel|car_wash|charging_station)$"]', r = D.radius * 1000, ctr = center(), whole = D.city === ALL,
+      around = whole ? '(area.lim);' : '(area.nl)(around:' + r + ',' + ctr.lat + ',' + ctr.lon + ');', parts = [];
     D.cats.forEach(function (c) { CATS[c].forEach(function (f) { parts.push('nwr["name"]["' + f[0] + '"~"^(' + f[1] + ')$"]' + (f[2] || '') + AVOID + around); }); });
     // name search: companies whose NAME contains a high-value keyword (brands, tuning, detailing, luxury ...)
     var terms = [];
     activeGroups().forEach(function (g) { if (g.weight >= 2 && !g.noName) g.kws.forEach(function (k) { if (k.length >= 4 && terms.indexOf(k) < 0) terms.push(reEsc(k)); }); });
     if (terms.length) parts.push('nwr["name"~"' + terms.join('|') + '",i]' + AVOID + around);
-    return '[out:json][timeout:180];area["ISO3166-1"="NL"][admin_level=2]->.nl;(' + parts.join('') + ');out center tags 1500;';
+    return '[out:json][timeout:180];area["ISO3166-1"="NL"][admin_level=2]->.nl;' + (whole ? 'area["ISO3166-2"="NL-LI"][admin_level=4]->.lim;' : '') + '(' + parts.join('') + ');out center tags ' + (whole ? 3000 : 1500) + ';';
   }
   function km(a, b, c, d) {
     var R = 6371, t = Math.PI / 180, x = (c - a) * t, y = (d - b) * t;
@@ -81,7 +96,7 @@
       var r = { id: id, name: t.name, type: typeOf(t), cat: catOf(t), city: t['addr:city'] || '',
         addr: [t['addr:street'], t['addr:housenumber'], t['addr:postcode']].filter(Boolean).join(' '),
         web: t.website || t['contact:website'] || '', phone: t.phone || t['contact:phone'] || '', email: t.email || t['contact:email'] || '',
-        km: km(CENTER.lat, CENTER.lon, la, lo), osm: 'https://www.openstreetmap.org/' + e.type + '/' + e.id };
+        km: km(center().lat, center().lon, la, lo), osm: 'https://www.openstreetmap.org/' + e.type + '/' + e.id };
       var text = Object.keys(t).map(function (k) { return t[k]; }).join(' ').toLowerCase();
       score(r, text);
       r.cap = parseInt(t.capacity || t['capacity:seats'], 10) || 0;
@@ -101,8 +116,8 @@
     if (!D.cats.length && !D.groups.length) { D.err = 'Pick at least one category or keyword group.'; C.draw(); return; }
     D.busy = 'search'; D.err = ''; D.msg = ''; D.ai = {}; D.picked = {}; C.draw();
     tryEndpoint(0, 'data=' + encodeURIComponent(buildQuery())).then(function (j) {
-      D.results = parse(j.elements || []); D.busy = ''; D.msg = D.results.length + ' real Dutch companies found within ' + D.radius + ' km of Maastricht, best keyword matches first.'; C.draw();
-    }).catch(function (e) { D.busy = ''; D.err = 'OpenStreetMap search failed (' + e.message + '). The free server may be busy, try again in a minute or use a smaller radius.'; C.draw(); });
+      D.results = parse(j.elements || []); D.busy = ''; D.msg = D.results.length + ' real Dutch companies found ' + (D.city === ALL ? 'in all of Limburg' : 'within ' + placeText()) + ', best keyword matches first.'; C.draw();
+    }).catch(function (e) { D.busy = ''; D.err = 'OpenStreetMap search failed (' + e.message + '). The free server may be busy, try again in a minute or use a smaller radius or a single city.'; C.draw(); });
   }
   function excluded(name) {
     var n = name.toLowerCase();
@@ -128,7 +143,7 @@
     var data = l.map(function (r, i) { return { i: i, name: r.name, type: r.type, category: r.cat, distance_km: Math.round(r.km * 10) / 10, city: r.city, has_website: !!r.web, keyword_hits: r.hits, capacity_seats: r.cap || null }; });
     var prompt = [
       'You help the organisers of "' + ev.name + '" (' + [ev.date, ev.place, 'Netherlands'].filter(Boolean).join(', ') + '), a rally / sports-car event with a relatively affluent audience, find local sponsors.',
-      'Below is a JSON list of REAL businesses from OpenStreetMap near Maastricht. Use ONLY this data. Never invent facts about a company.',
+      'Below is a JSON list of REAL businesses from OpenStreetMap in Limburg (Netherlands), ' + (D.city === ALL ? 'across the whole province' : 'around ' + D.city) + '. Use ONLY this data. Never invent facts about a company.',
       'Weighting, highest first: (1) automotive and motorsport businesses: dealers, premium/sports/exotic/classic cars, specialists of brands such as Porsche, BMW, Mercedes-AMG, Audi, Ferrari, Lamborghini, McLaren, Aston Martin, detailing, wrapping, PPF, ceramic coating, tuning, wheels, tyres, performance parts, car audio and electronics; (2) businesses that serve affluent car enthusiasts: luxury, watches, jewellery, menswear, eyewear, real estate, wealth management, financial advice, leasing, insurance, business services; (3) hospitality and events: hotels, fine dining, wine, catering, golf, wellness.',
       'Score ordinary petrol stations, supermarkets, snack bars, generic shops and large national chains LOW.',
       'Restaurants: prefer ones that could host a lunch for a group of 100+ people (capacity_seats, hotel/zaal/brasserie/kasteel in the name). The data has no ratings, so never call a restaurant highly rated.',
@@ -161,7 +176,7 @@
       var r = D.results.filter(function (x) { return x.id === id; })[0]; if (!r || st.sponsors.some(function (s) { return s.id === id; })) return;
       var a = D.ai[id];
       var notes = 'Real company from OpenStreetMap.' + (r.addr ? ' Address: ' + r.addr + ' ' + r.city + '.' : '') + (r.phone ? ' Phone: ' + r.phone + '.' : '') + (r.web ? ' Website: ' + r.web + '.' : '') + (r.hits.length ? ' Keywords: ' + r.hits.join(', ') + '.' : '') + (a ? ' AI note: ' + a.reason : '');
-      var s = C.sp(id, r.name, r.cat === 'Other' ? cap(r.type || 'Other') : r.cat, 'Limburg', r.city || 'Maastricht', '?', a ? a.match : null, a ? a.value : null, 'suggested',
+      var s = C.sp(id, r.name, r.cat === 'Other' ? cap(r.type || 'Other') : r.cat, 'Limburg', r.city || (D.city === ALL ? 'Limburg' : D.city), '?', a ? a.match : null, a ? a.value : null, 'suggested',
         a && a.crit.length === 4 ? a.crit : null, notes, r.email || r.web || '(no email found - use website or phone)');
       st.sponsors.push(s); n++;
     });
@@ -185,9 +200,11 @@
   P.discover = function () {
     var cf = cfg(), l = view(), busy = D.busy;
     var chips = function (arr, on, fn) { return arr.map(function (n, i) { return '<button class="chip' + (on.indexOf(n) > -1 ? ' on' : '') + '" onclick="R2R_D.' + fn + '(' + i + ')">' + esc(n) + '</button>'; }).join(''); };
-    return '<div class="top"><div><h2>Discover companies</h2><p class="mute">Real businesses near Maastricht from OpenStreetMap \u00b7 Dutch companies only</p></div></div>' +
+    return '<div class="top"><div><h2>Discover companies</h2><p class="mute">Real businesses ' + (D.city === ALL ? 'in all of Limburg' : 'near ' + D.city) + ' from OpenStreetMap \u00b7 Dutch companies only</p></div></div>' +
       (D.err ? '<div class="banner">' + esc(D.err) + '</div>' : '') + (D.msg ? '<div class="note">' + esc(D.msg) + '</div>' : '') +
-      '<div class="card" style="margin-bottom:16px"><div class="ctrl"><div><div class="lbl">Radius around Maastricht</div><select onchange="R2R_D.radius(this.value)">' +
+      '<div class="card" style="margin-bottom:16px"><div class="ctrl"><div><div class="lbl">City or region</div><select onchange="R2R_D.city(this.value)">' +
+      [ALL].concat(CITIES.map(function (c) { return c[0]; })).map(function (n) { return '<option' + (n === D.city ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select></div>' +
+      '<div><div class="lbl">Radius around ' + (D.city === ALL ? 'the city' : D.city) + '</div><select ' + (D.city === ALL ? 'disabled ' : '') + 'onchange="R2R_D.radius(this.value)">' +
       [5, 10, 25, 35, 50].map(function (v) { return '<option value="' + v + '"' + (v === D.radius ? ' selected' : '') + '>' + v + ' km</option>'; }).join('') + '</select></div>' +
       '<div><div class="lbl">Business types to fetch</div><div class="chips">' + chips(CATNAMES, D.cats, 'cat') + '</div></div></div>' +
       '<div class="lbl">Keyword groups (find by name and score results)</div><div class="chips">' + chips(KEYGROUPS.map(function (g) { return g.name; }), D.groups, 'grp') + '</div>' +
@@ -256,6 +273,7 @@
   function tog(arr, v) { var i = arr.indexOf(v); if (i > -1) arr.splice(i, 1); else arr.push(v); C.draw(); }
   window.R2R_D = {
     radius: function (v) { D.radius = +v; },
+    city: function (v) { D.city = v; C.draw(); },
     cat: function (i) { tog(D.cats, CATNAMES[i]); },
     grp: function (i) { tog(D.groups, KEYGROUPS[i].name); },
     kw: function () { var e = document.getElementById('dk'), v = e && e.value.trim(); if (v && D.kw.indexOf(v) < 0) D.kw.push(v); C.draw(); },
