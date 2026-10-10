@@ -215,18 +215,19 @@
     a.href = u; a.download = name; document.body.appendChild(a); a.click();
     setTimeout(function () { URL.revokeObjectURL(u); a.remove(); }, 500);
   }
+  function tr(s) { return typeof root.R2R_T === 'function' ? root.R2R_T(s) : s; }   /* PDF text in the language chosen on the site */
   function downloadPdf(kind) {
     var d = get(), bytes;
     if (kind === 'route') {
       var c = calc(d), rows = [], eta = c.total > 0;
       c.stops.forEach(function (x, i) {
-        rows.push([L(i) + (eta && x.eta != null ? '  ' + fmtT(x.eta) : ''), x.s.name, (x.s.desc || '') + (x.wait && i ? '  Stop: ' + x.wait + ' min' : '')]);
-        x.steps.forEach(function (p) { rows.push([eta && p.eta != null ? fmtT(p.eta) : '', turnLabel(p.turn), (p.text ? p.text + '  ' : '') + (p.km ? fmtK(p.km) + ' km' : '')]); });
+        rows.push([L(i) + (eta && x.eta != null ? '  ' + fmtT(x.eta) : ''), tr(x.s.name), tr(x.s.desc || '') + (x.wait && i ? '  ' + tr('Stop') + ': ' + x.wait + ' min' : '')]);
+        x.steps.forEach(function (p) { rows.push([eta && p.eta != null ? fmtT(p.eta) : '', tr(turnLabel(p.turn)), (p.text ? tr(p.text) + '  ' : '') + (p.km ? fmtK(p.km) + ' km' : '')]); });
       });
-      bytes = buildPdf('The route', 'Start at A and follow every step to the finish' + (c.total > 0 ? '  |  Total ' + fmtK(c.total) + ' km' : ''), rows, d.route.note);
+      bytes = buildPdf(tr('The route'), tr('Start at A and follow every step to the finish') + (c.total > 0 ? '  |  ' + tr('Total') + ' ' + fmtK(c.total) + ' km' : ''), rows, tr(d.route.note));
     }
-    else bytes = buildPdf('Agenda', 'The plan for the day',
-      d.agenda.items.map(function (a) { return [a.time, a.title, a.desc]; }), d.agenda.note);
+    else bytes = buildPdf(tr('Agenda'), tr('The plan for the day'),
+      d.agenda.items.map(function (a) { return [a.time, tr(a.title), tr(a.desc)]; }), tr(d.agenda.note));
     fileDownload('rally2rumble-' + kind + '.pdf', bytes, 'application/pdf');
   }
   function dataFileText(d) { return '/* Fallback rally details (used until something is published from the Rally details page). Optional backup: replace this file with a downloaded copy. */\nwindow.RALLY_DEFAULT = ' + JSON.stringify(d, null, 2) + ';\n'; }

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="nl">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -11,6 +11,8 @@
 <link rel="stylesheet" href="css/info.css">
 <link rel="stylesheet" href="css/blueprint.css">
 <script src="java/theme.js"></script>
+<script src="java/i18n.js"></script>
+<script src="java/translations.js"></script>
 <style>
 .join{max-width:560px;margin:0 auto}
 .join h1{font-size:clamp(44px,9vw,76px);font-weight:800}
@@ -33,12 +35,6 @@
 <div class="row" id="nav"></div></header>
 <main>
 <div class="join">
-<div class="langs" role="group" aria-label="Taal / Sprache / Language / Langue">
-<button type="button" class="chip" data-l="nl" lang="nl">Nederlands</button>
-<button type="button" class="chip" data-l="de" lang="de">Deutsch</button>
-<button type="button" class="chip" data-l="en" lang="en">English</button>
-<button type="button" class="chip" data-l="fr" lang="fr">Fran&ccedil;ais</button>
-</div>
 <h1>Join the Community</h1>
 <p class="lead" data-i="lead"></p>
 
@@ -73,6 +69,7 @@
 </div>
 </div>
 </main>
+<script src="java/java.js"></script>
 <script>
 (function () {
   var SBU = 'https://xhfckfrekbvhjsqftwcb.supabase.co', SBK = 'sb_publishable_hlUllOuo20Y_iL-5Cey4Fg_9tky4mSR';   // public values, same as auth.js
@@ -103,10 +100,8 @@
       e_fill: 'Remplis tous les champs obligatoires (avec une adresse e-mail valide).', e_phone: 'Saisis un num\u00e9ro de t\u00e9l\u00e9phone valide, par exemple 06 12345678.', e_dup: "Cette adresse e-mail fait d\u00e9j\u00e0 partie de la communaut\u00e9.",
       e_fail: "\u00c7a n'a pas fonctionn\u00e9. V\u00e9rifie tes informations et r\u00e9essaie.", e_net: 'Pas de connexion. V\u00e9rifie ta connexion internet et r\u00e9essaie.' }
   };
-  var K = 'r2r_lang', lang = 'nl', saved = null, msgKey = '', busy = false;
-  try { saved = localStorage.getItem(K); } catch (e) {}
-  if (saved && T[saved]) lang = saved;
-  else { var b = (navigator.language || 'nl').slice(0, 2).toLowerCase(); if (T[b]) lang = b; }   // first visit: use the browser language, otherwise Dutch
+  var lang = (window.R2R_LANG && T[window.R2R_LANG]) ? window.R2R_LANG : 'en', msgKey = '', busy = false;   // the language comes from the shared switcher (java/i18n.js)
+  window.addEventListener('r2r-lang', function (e) { if (T[e.detail]) { lang = e.detail; apply(); } });
 
   var f = document.getElementById('f'), msg = document.getElementById('msg'), go = document.getElementById('go'), ok = document.getElementById('ok');
   function all(sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); }
@@ -115,14 +110,10 @@
     document.documentElement.lang = lang;
     all('[data-i]').forEach(function (n) { n.textContent = t[n.getAttribute('data-i')]; });
     all('[data-ph]').forEach(function (n) { n.placeholder = t[n.getAttribute('data-ph')]; });
-    all('.langs button').forEach(function (b) { var on = b.getAttribute('data-l') === lang; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
     go.textContent = busy ? t.going : t.go;
     msg.textContent = msgKey ? t[msgKey] : '';
   }
   function say(k) { msgKey = k; msg.textContent = k ? T[lang][k] : ''; }
-  all('.langs button').forEach(function (b) { b.addEventListener('click', function () {
-    lang = b.getAttribute('data-l'); try { localStorage.setItem(K, lang); } catch (e) {} apply();
-  }); });
 
   function done() { f.hidden = true; ok.hidden = false; ok.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
   function v(id) { return document.getElementById(id).value.trim(); }

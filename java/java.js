@@ -316,8 +316,9 @@
   }
   function tick() {
     var c = $('clk'); if (!c) return; var d = new Date();
-    c.textContent = d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }) + ', ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    c.textContent = d.toLocaleDateString(window.R2R_LANG || undefined, { weekday: 'long', day: 'numeric', month: 'long' }) + ', ' + d.toLocaleTimeString(window.R2R_LANG || undefined, { hour: '2-digit', minute: '2-digit' });
   }
+  window.addEventListener('r2r-lang', tick);   /* weekday and month follow the chosen language */
   function topNav() {
     var n = $('nav'); if (!n) return;
     n.innerHTML = rd(SES, null) ? '<a class="btn ghost" href="dashboard.html">Dashboard</a><button class="ghost" onclick="R2R.out()">Log out</button>' : '<a class="btn ghost" href="login.html">Log in</a><a class="btn" href="signup.html">Sign up</a>';

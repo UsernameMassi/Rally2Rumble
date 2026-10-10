@@ -8,21 +8,14 @@ window.RALLY_DEFAULT = {
     "teams": "Driver + passengers"
   },
   "route": {
-    "startTime": "10:00",
-    "speed": "50",
     "note": "Schematic overview, not to scale. Final route details will be published before the rally.",
     "stages": [
-      {"name": "Start", "desc": "Location TBC. Check-in, scrutineering and flag-off.", "dist": "", "wait": "", "steps": [
-        {"turn": "straight", "text": "Leave the start area and follow the main road", "km": "1.2"},
-        {"turn": "right", "text": "Turn right onto [road name]", "km": "3.5"},
-        {"turn": "roundabout", "text": "At the roundabout take the 2nd exit towards [place]", "km": "2.8"},
-        {"turn": "left", "text": "Turn left onto [road name]", "km": "4.0"}
-      ]},
-      {"name": "Stage 1", "desc": "Opening regional stage.", "dist": "", "steps": []},
-      {"name": "Stage 2", "desc": "Mid-route stage.", "dist": "", "steps": []},
-      {"name": "Lunch stop", "desc": "Regroup, refuel and rest.", "dist": "", "wait": "45", "steps": []},
-      {"name": "Stage 3", "desc": "Final stage into the finish.", "dist": "", "steps": []},
-      {"name": "Finish", "desc": "Finish line and prize giving.", "dist": "", "steps": []}
+      {"name": "Start", "desc": "Location TBC. Check-in, scrutineering and flag-off.", "dist": "0 km"},
+      {"name": "Stage 1", "desc": "Opening regional stage.", "dist": "TBC"},
+      {"name": "Stage 2", "desc": "Mid-route stage.", "dist": "TBC"},
+      {"name": "Lunch stop", "desc": "Regroup, refuel and rest.", "dist": "TBC"},
+      {"name": "Stage 3", "desc": "Final stage into the finish.", "dist": "TBC"},
+      {"name": "Finish", "desc": "Finish line and prize giving.", "dist": "TBC"}
     ]
   },
   "agenda": {
