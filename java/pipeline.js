@@ -137,7 +137,7 @@
   /* ---------- page ---------- */
   P.pipeline = function () {
     setTimeout(post, 0);
-    return '<div class="top"><div><h2>Pipeline</h2><p class="mute" id="plsub">' + subline() + '</p></div><div class="row" style="align-items:center">' + syncBadge() + '<button type="button" data-act="add" data-st="suggested">+ Add sponsor</button></div></div>' +
+    return '<div class="top"><div><h2>Pipeline</h2><p class="mute" id="plsub">' + subline() + '</p></div><div class="row" style="align-items:center">' + syncBadge() + '<button type="button" class="ghost" data-act="found">Found companies</button><button type="button" data-act="add" data-st="suggested">+ Add sponsor</button></div></div>' +
       '<div id="plstats" class="plstats">' + stats() + '</div>' +
       '<details class="plpad" id="plpad"' + (UI.pad ? ' open' : '') + '><summary>My notes <small>Private scratchpad, saved to your account</small></summary>' +
       '<textarea id="plpadt" placeholder="Ideas, call reminders, things to ask\u2026 anything you want to keep.">' + esc(S().pad || '') + '</textarea>' + syncBadge() + '</details>' +
@@ -242,6 +242,90 @@
     S().sponsors.push(s); persist(); C.closeM(); refresh(); C.toast(n + ' added');
   }
 
+  /* ---------- found companies (the list the Discover page builds) ----------
+     Rows come from the shared Supabase table found_companies (and from this browser's saved Discover searches).
+     "Add" puts a company in the pipeline under the same id Discover uses, so both pages always agree on who is already added. */
+  var FD = { rows: null, loading: false, err: '', src: '', q: '', flt: 'all', shown: 40 }, fdT = null;
+  function cap(x) { x = String(x || ''); return x.charAt(0).toUpperCase() + x.slice(1); }
+  function okId(id) { return /^osm[nwr]\d+$/.test(String(id)); }
+  function safeUrl(v) {
+    v = String(v || '').trim().slice(0, 200); if (!v) return '';
+    if (!/^https?:\/\//i.test(v)) { if (/^[\w.-]+\.[a-z]{2,}(\/\S*)?$/i.test(v)) v = 'https://' + v; else return ''; }
+    return /^https?:\/\/[^\s"'<>]+$/i.test(v) ? v : '';
+  }
+  function firstEmail(v) { var m = String(v || '').match(/[^\s;,<>"']+@[^\s;,<>"']+\.[a-z]{2,}/i); return m ? m[0].slice(0, 120) : ''; }
+  function foundLocal() {                                            // companies from this browser's saved Discover searches
+    var c = C.rd('r2r_found_v4', {}) || {}, out = {};
+    Object.keys(c).forEach(function (k) { ((c[k] && c[k].list) || []).forEach(function (x) { if (okId(x[0]) && x[1]) out[x[0]] = { id: x[0], name: String(x[1]), lat: x[2], lon: x[3], d: x[4] || {} }; }); });
+    return out;
+  }
+  function foundLoad(force) {
+    if (FD.loading || (FD.rows && !force)) { paintFound(); return; }
+    FD.loading = true; FD.err = ''; paintFound();
+    var map = foundLocal();
+    function done() { FD.rows = Object.keys(map).map(function (k) { return map[k]; }); FD.loading = false; paintFound(); }
+    if (!C.sb.on()) { FD.src = 'this device'; FD.err = 'You are not logged in to a cloud account, so only companies found on this device are shown.'; done(); return; }
+    function page(o) {
+      return C.sb.json('GET', '/rest/v1/found_companies?select=id,name,lat,lon,d&order=id&limit=1000&offset=' + o).then(function (a) {
+        a = a || [];
+        a.forEach(function (r) { if (!okId(r.id) || !r.name || !r.d || typeof r.d !== 'object') return; if (!(map[r.id] && map[r.id].d && map[r.id].d.fit != null)) map[r.id] = r; });
+        return a.length === 1000 && o < 9000 ? page(o + 1000) : null;
+      });
+    }
+    page(0).then(function () { FD.src = 'the shared list'; done(); }, function (e) { FD.src = 'this device'; FD.err = 'Could not read the shared list (' + e.message + '). Showing companies found on this device only.'; done(); });
+  }
+  function foundRow(r) { return (FD.rows || []).filter(function (x) { return x.id === r; })[0]; }
+  function foundView(ids) {
+    var q = FD.q.trim().toLowerCase();
+    var l = (FD.rows || []).filter(function (r) {
+      var inP = !!ids[r.id]; if (FD.flt === 'new' && inP) return false; if (FD.flt === 'in' && !inP) return false;
+      if (!q) return true; var d = r.d || {};
+      return [r.name, d.type, d.city, d.cat, d.tt, d.txt].join(' ').toLowerCase().indexOf(q) > -1;
+    });
+    l.sort(function (a, b) { var x = a.d && a.d.fit != null ? a.d.fit : -1, y = b.d && b.d.fit != null ? b.d.fit : -1; return y - x || String(a.name).localeCompare(String(b.name)); });
+    return l;
+  }
+  function foundItem(r, ids) {
+    var d = r.d || {}, inP = !!ids[r.id], id = attr(r.id), w = safeUrl(d.web);
+    var sub = [d.type, d.city].filter(Boolean).map(function (x) { return esc(String(x).slice(0, 60)); }).join(' \u00b7 ');
+    return '<div class="fd-i' + (inP ? ' in' : '') + '"><div class="fd-main"><b>' + esc(r.name) + '</b>' + (d.fit != null ? ' <span class="fd-fit" title="Fit score from Discover">' + Math.round(+d.fit || 0) + '%</span>' : '') +
+      (sub ? '<small>' + sub + '</small>' : '') + (w ? '<small><a class="link" href="' + attr(w) + '" target="_blank" rel="noopener noreferrer">website</a></small>' : '') + '</div>' +
+      '<div class="fd-act">' + (inP ? '<span class="pill hi">In pipeline</span><button type="button" class="ic" data-act="frem" data-id="' + id + '">Remove</button>' : '<button type="button" class="sm" data-act="fadd" data-id="' + id + '">Add</button>') + '</div></div>';
+  }
+  function paintFound() {
+    var box = $('fdlist'); if (!box) return;
+    if (FD.loading || !FD.rows) { box.innerHTML = '<p class="plempty">Loading found companies\u2026</p>'; return; }
+    var ids = {}; S().sponsors.forEach(function (s) { ids[s.id] = 1; });
+    var all = FD.rows, inN = all.filter(function (r) { return ids[r.id]; }).length, l = foundView(ids), vis = l.slice(0, FD.shown);
+    $('fdsub').textContent = all.length + ' found \u00b7 ' + inN + ' in your pipeline' + (FD.src ? ' \u00b7 from ' + FD.src : '');
+    $('fdchips').innerHTML = [['all', 'All'], ['new', 'Not in pipeline'], ['in', 'In pipeline']].map(function (o) { return '<button type="button" class="chip' + (FD.flt === o[0] ? ' on' : '') + '" data-act="fflt" data-v="' + o[0] + '">' + o[1] + '</button>'; }).join('');
+    box.innerHTML = (FD.err ? '<div class="banner">' + esc(FD.err) + '</div>' : '') +
+      (vis.length ? '<div class="fd-list">' + vis.map(function (r) { return foundItem(r, ids); }).join('') + '</div>' + (l.length > vis.length ? '<button type="button" class="ghost block" data-act="fmore">Show more (' + (l.length - vis.length) + ')</button>' : '')
+        : '<p class="plempty">' + (all.length ? 'No companies match this filter.' : 'No found companies yet. Run a search on the Discover page first.') + '</p>');
+  }
+  function openFound() {
+    FD.q = ''; FD.flt = 'all'; FD.shown = 40;
+    C.modal('<div class="drawer pl-d" role="dialog" aria-label="Found companies"><div class="split"><div><h2>Found companies</h2><small id="fdsub"></small></div><button type="button" class="ic" data-act="close" aria-label="Close">\u2715</button></div>' +
+      '<div class="fd-tools"><input id="fdq" type="search" placeholder="Search name, type or city\u2026" aria-label="Search found companies" autocomplete="off"><button type="button" class="ghost sm" data-act="frefresh">Refresh</button></div>' +
+      '<div class="chips" id="fdchips"></div><div id="fdlist"></div></div>', true);
+    foundLoad(false);
+  }
+  function fAdd(id) {
+    var r = foundRow(id); if (!r || get(id)) return;
+    var d = r.d || {}, fit = d.fit != null ? Math.max(0, Math.min(100, Math.round(+d.fit) || 0)) : null, val = ['low', 'medium', 'high'].indexOf(d.value) > -1 ? d.value : 'medium', w = safeUrl(d.web), em = firstEmail(d.email);
+    var notes = 'Real company from OpenStreetMap.' + (d.addr ? ' Address: ' + String(d.addr).slice(0, 120) + ' ' + String(d.city || '') + '.' : '') + (d.phone ? ' Phone: ' + String(d.phone).slice(0, 40) + '.' : '') + (w ? ' Website: ' + w + '.' : '');
+    var s = C.sp(r.id, String(r.name).slice(0, 200), d.cat && d.cat !== 'Other' ? String(d.cat) : cap(d.type || 'Other'), 'Limburg', String(d.city || 'Limburg'), 0, fit, val, 'suggested', null, notes, em || w || '(no email found - use website or phone)');
+    s.history.push(['Added from found companies', today()]);
+    S().sponsors.push(s); persist(); refresh(); paintFound(); C.toast(r.name + ' added to the pipeline');
+  }
+  function fRemove(id) {
+    var i = -1; S().sponsors.forEach(function (x, j) { if (x.id === id) i = j; }); if (i < 0) return;
+    var s = S().sponsors[i];
+    if (((s.mynotes && s.mynotes.length) || s.status !== 'suggested') && !confirm('Remove ' + s.name + ' from the pipeline? Its notes and activity go with it (you can undo for a few seconds).')) return;
+    S().sponsors.splice(i, 1); persist(); refresh(); paintFound();
+    undoToast(s.name + ' removed', function () { S().sponsors.splice(Math.min(i, S().sponsors.length), 0, s); persist(); refresh(); paintFound(); });
+  }
+
   /* ---------- events (one set of delegated listeners) ---------- */
   document.addEventListener('click', function (e) {
     var t = e.target.closest && e.target.closest('[data-act]'); if (!t) return;
@@ -274,6 +358,12 @@
     else if (a === 'del') R.del(id);
     else if (a === 'addval') { ADD.val = t.getAttribute('data-v'); Array.prototype.forEach.call($('plav').children, function (b) { b.classList.toggle('on', b === t); }); }
     else if (a === 'addsave') addSave();
+    else if (a === 'found') openFound();
+    else if (a === 'fadd') fAdd(id);
+    else if (a === 'frem') fRemove(id);
+    else if (a === 'fflt') { FD.flt = t.getAttribute('data-v'); FD.shown = 40; paintFound(); }
+    else if (a === 'fmore') { FD.shown += 40; paintFound(); }
+    else if (a === 'frefresh') foundLoad(true);
   });
   document.addEventListener('keydown', function (e) {
     var t = e.target;
@@ -285,6 +375,7 @@
   document.addEventListener('input', function (e) {
     var t = e.target;
     if (t.id === 'plq') { UI.q = t.value; var bd = $('plboard'); if (bd) bd.innerHTML = board(); }
+    else if (t.id === 'fdq') { FD.q = t.value; FD.shown = 40; clearTimeout(fdT); fdT = setTimeout(paintFound, 150); }
     else if (t.id === 'plpadt') {
       S().pad = t.value; Array.prototype.forEach.call(document.querySelectorAll('.pl-sync'), function (el) { if (C.sb.on()) { el.className = 'pl-sync busy'; el.textContent = 'Saving to your account\u2026'; } });
       clearTimeout(padTimer); padTimer = setTimeout(persist, 400);

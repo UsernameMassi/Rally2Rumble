@@ -181,7 +181,7 @@
       tt: String(d.tt || '').slice(0, 120), txt: String(d.txt || '').slice(0, 420) };
     r.osm = osmLink(id); r.km = km(c.lat, c.lon, lat, lon); scoreRec(r); return r;
   }
-  function dOf(r) { return { type: r.type, cat: r.cat, city: r.city, addr: r.addr, web: r.web, phone: r.phone, email: r.email, cap: r.cap, wd: r.wd, tt: r.tt, txt: r.txt }; }
+  function dOf(r) { return { type: r.type, cat: r.cat, city: r.city, addr: r.addr, web: r.web, phone: r.phone, email: r.email, cap: r.cap, wd: r.wd, tt: r.tt, txt: r.txt, fit: r.fit, value: r.value }; }
 
   /* ---------- OpenStreetMap ---------- */
   /* One small query per business type (plus one for brand names). Small queries finish fast and a busy server only loses one part. */
@@ -301,7 +301,7 @@
   function ago(t) { var m = Math.round((Date.now() - t) / 60000); return m < 60 ? Math.max(1, m) + ' min ago' : Math.round(m / 60) + ' h ago'; }
 
   /* ---------- shared list in Supabase (tables found_companies + company_ai, see supabase-found.sql) ---------- */
-  function cloudFail(e) { var m = (e && e.message) || String(e); D.cloud = /schema cache|does not exist|relation|could not find/i.test(m) ? 'missing' : 'error'; D.cloudErr = m; chip(); }
+  function cloudFail(e) { var m = (e && e.message) || String(e); log('Shared list error: ' + m.slice(0, 300), 'err'); D.cloud = /schema cache|does not exist|relation|could not find/i.test(m) ? 'missing' : 'error'; D.cloudErr = m; chip(); }
   function chipHtml() {
     var t, c;
     if (!cloud()) { c = 'off'; t = 'Saved on this device only'; }
@@ -322,9 +322,11 @@
     return page(0).then(function (a) { D.cloud = 'ok'; return a; }, function (e) { cloudFail(e); return []; });
   }
   function dbSave(list) {                                              // only companies the shared list does not have yet
-    if (!cloud() || D.cloud === 'missing') return Promise.resolve(0);
+    if (!cloud()) { log('Not saved to the shared list: you are not logged in to a cloud account.', 'warn'); return Promise.resolve(0); }
+    if (D.cloud === 'missing') { log('Not saved: table found_companies is missing. Run supabase-found.sql in Supabase.', 'err'); return Promise.resolve(0); }
     var rows = list.filter(function (r) { return !D.known[r.id] && r.kscore > 0 && okId(r.id); }).slice(0, 1500).map(function (r) { return { id: r.id, name: r.name, lat: r.lat, lon: r.lon, d: dOf(r) }; }), chunks = [], i;
     for (i = 0; i < rows.length; i += 250) chunks.push(rows.slice(i, i + 250));
+    log('Shared list: saving ' + rows.length + ' companies the list does not have yet\u2026');
     return Promise.all(chunks.map(function (ch) {
       return C.sb.req('POST', '/rest/v1/found_companies', ch, { Prefer: 'resolution=ignore-duplicates,return=minimal' }).then(function (res) {
         if (res.ok) { ch.forEach(function (x) { D.known[x.id] = 1; }); return ch.length; }
@@ -373,7 +375,9 @@
       D.results = dedupe(cached.list.map(function (x) { return build(x[0], x[1], x[2], x[3], x[4]); }).filter(inScope));
       log('Used the saved search from ' + ago(cached.t) + ': ' + D.results.length + ' companies. No server was asked.', 'ok');
       D.busy = ''; D.stage = 3; D.light = 'ok'; D.msg = D.results.length + ' companies from your last search (' + ago(cached.t) + '). Press \u201CSearch again\u201D under More options for the newest data.';
-      aiP.then(function () { if (seq === D.seq) { applyAi(); C.draw(); } }); C.draw(); return;
+      aiP.then(function () { if (seq === D.seq) { applyAi(); C.draw(); } }); C.draw();
+      dbLoad().then(function (rows) { rows.forEach(function (row) { if (okId(row.id)) { D.known[row.id] = 1; D.knownN++; } }); chip(); return dbSave(D.results); }).then(function (n) { if (n) { log('Saved ' + n + ' companies from the saved search to the shared list.', 'ok'); if (seq === D.seq) { D.msg += ' ' + n + ' saved to the shared list.'; C.draw(); } } });
+      return;
     }
     var dbP = dbLoad().then(function (rows) {
       if (seq !== D.seq) return;

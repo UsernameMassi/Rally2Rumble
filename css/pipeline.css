@@ -101,3 +101,17 @@ body[data-page="pipeline"] #view{max-width:none}
   .drawer.pl-d{padding:16px}
 }
 @media(prefers-reduced-motion:reduce){.plcard,.plcol,.plc-act{transition:none}}
+
+
+/* found companies drawer (list built by the Discover page) */
+.fd-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0 10px}
+.fd-tools input{flex:1 1 180px;width:auto}
+.fd-list{border:1px solid var(--line);background:var(--bg);margin-bottom:10px}
+.fd-i{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
+.fd-i:last-child{border-bottom:0}
+.fd-i.in{background:var(--panel)}
+.fd-main{min-width:0}
+.fd-main b{word-break:break-word}
+.fd-main small{display:block}
+.fd-fit{font-size:12px;color:var(--mute);margin-left:6px}
+.fd-act{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
