@@ -156,6 +156,7 @@
     var attn = state.sponsors.filter(function (s) { return s.attn; });
     return head('Dashboard', evLine(), '<a class="btn" href="find.html">Find sponsors</a>') +
       '<div class="stats">' + ['suggested', 'approached', 'conversation', 'confirmed'].map(function (k) {
+        if (k === 'suggested' && window.R2R_SUG) return window.R2R_SUG.tile('link');
         return '<a class="stat" href="pipeline.html"><div class="big">' + c[k] + '</div><span>' + LABEL[k] + '</span></a>'; }).join('') + '</div>' +
       '<div class="two"><div><div class="lbl">Needs your attention</div>' +
       (attn.map(function (s) { return '<a class="item" href="pipeline.html?open=' + s.id + '"><div><b>' + esc(s.name) + '</b><small>' + esc(s.sub) + '</small></div><span class="pill ' + (s.attn === 'due' ? 'dark' : 'hi') + '">' + (s.attn === 'due' ? 'Due' : 'Replied') + '</span></a>'; }).join('') || '<p class="mute">Nothing needs you right now.</p>') +

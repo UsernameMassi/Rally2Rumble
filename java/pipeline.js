@@ -75,6 +75,7 @@
     all.forEach(function (s) { if (c[s.status] != null) c[s.status]++; });
     var pct = Math.min(100, Math.round(c.confirmed / t * 100)), due = all.filter(function (s) { return s.attn; }).length;
     return ['suggested', 'approached', 'conversation'].map(function (k) {
+      if (k === 'suggested' && window.R2R_SUG) return window.R2R_SUG.tile('act');
       return '<div class="stat"><div class="big">' + c[k] + '</div><span>' + LABEL[k] + '</span></div>';
     }).join('') +
       '<div class="stat"><div class="big">' + c.confirmed + '<small> / ' + t + '</small></div><span>Confirmed</span><div class="bar"><i style="width:' + pct + '%"></i></div></div>' +
@@ -327,6 +328,7 @@
   }
 
   /* ---------- events (one set of delegated listeners) ---------- */
+  window.addEventListener('r2r-sug', function () { if ($('plstats')) refresh(); });
   document.addEventListener('click', function (e) {
     var t = e.target.closest && e.target.closest('[data-act]'); if (!t) return;
     var a = t.getAttribute('data-act'), id = t.getAttribute('data-id'), s;
@@ -370,7 +372,7 @@
     if (e.key === 'Escape' && $('ov')) { C.closeM(); return; }
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && t.id === 'pln') { e.preventDefault(); addNote(); return; }
     if (e.key === 'Enter' && t.id === 'pla1') { e.preventDefault(); addSave(); return; }
-    if ((e.key === 'Enter' || e.key === ' ') && t.getAttribute && (t.classList.contains('plcard') || t.getAttribute('data-act') === 'attn')) { e.preventDefault(); t.click(); }
+    if ((e.key === 'Enter' || e.key === ' ') && t.getAttribute && (t.classList.contains('plcard') || (t.getAttribute('data-act') === 'attn' || t.getAttribute('data-act') === 'found'))) { e.preventDefault(); t.click(); }
   });
   document.addEventListener('input', function (e) {
     var t = e.target;
