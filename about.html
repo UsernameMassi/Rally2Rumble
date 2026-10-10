@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<!--
+  ============================================================
+   RALLY2RUMBLE - ABOUT US PAGE
+   How to change the text (no coding needed)
+  ============================================================
+   1. CHANGE A TEXT: edit the words between the tags.
+      Example:  <h2>Our story</h2>   becomes   <h2>Who we are</h2>
+      Do not remove or change the parts inside the < and > signs.
+
+   2. DASHED BOXES (class="ph"): these are TO DO notes. Replace the whole
+      line with your own text, for example:
+         <p>We started in 2025 with ten friends and one route.</p>
+
+   3. OTHER LANGUAGES (NL / DE / FR): the page is written in English and
+      translated by the file java/translations-about.js. If you change an
+      English text, open that file, find the old English sentence, replace
+      it with your new one, and fix the NL, DE and FR next to it. Without
+      this, the new text stays English in the other languages.
+
+   4. ADD A CARD: copy a whole block from <div class="abt-card"> to its
+      closing </div> and paste it under another card. Remove one the same way.
+
+   5. THE PAGE HAS 3 TABS: Everyone, Sponsors, Participants. Each tab starts
+      with a big banner comment below. Section 06 (Contact) is shown under
+      all tabs.
+  ============================================================
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!-- Page title (browser tab) and the text Google shows in search results -->
+<title>About us | Rally2Rumble</title>
+<meta name="description" content="Rally2Rumble is a regional car rally and community for drivers, passengers and partners. Read who we are, what we do and what we want to build.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="About us | Rally2Rumble">
+<meta property="og:description" content="Who we are, what we do and what we want to build: the Rally2Rumble community.">
+
+<!-- Fonts, styles and scripts. Do not change this block. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Michroma&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/theme.css">
+<link rel="stylesheet" href="css/info.css">
+<link rel="stylesheet" href="css/blueprint.css">
+<link rel="stylesheet" href="css/about.css">
+<link rel="stylesheet" href="css/mobile.css">
+<script src="java/theme.js"></script>
+<script src="java/i18n.js"></script>
+<script src="java/translations.js"></script>
+<script src="java/translations-about.js"></script>
+<script src="java/mobile.js"></script>
+</head>
+
+<body data-page="about">
+<div class="stripe"></div>
+
+<!-- ===== MENU AT THE TOP ===== -->
+<!-- To add a menu item: copy one <a ...>...</a> line. The Log in / Sign up buttons are added automatically. -->
+<header>
+  <a class="brand" href="index.html">Rally<b>2</b>Rumble</a>
+  <nav class="nav2">
+    <a href="index.html">Info</a>
+    <a href="route.html">Route</a>
+    <a href="agenda.html">Agenda</a>
+    <a href="gallery.html">Photos</a>
+    <a href="community.html">Community</a>
+    <a href="about.html" class="on" aria-current="page">About us</a>
+  </nav>
+  <div id="nav"></div>
+</header>
+
+<main class="abt">
+
+  <!-- ===== HERO (the big text at the top) ===== -->
+  <section class="abt-hero">
+    <p class="eyebrow">About us</p>
+    <h1>Where the road becomes a community.</h1>
+    <p class="lead">Rally2Rumble is a regional car rally for drivers, passengers and partners who share one passion: a full day on the road, done properly.</p>
+
+    <!-- The three small boxes: the small word is the label, the bold word is the value -->
+    <div class="facts">
+      <div class="fact">
+        <span>Format</span>
+        <b>Regional car rally</b>
+      </div>
+      <div class="fact">
+        <span>Teams</span>
+        <b>Driver + passengers</b>
+      </div>
+      <div class="fact">
+        <span>Date</span>
+        <b>To be confirmed</b>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== THE THREE TABS (the names you click on) ===== -->
+  <div class="abt-tabs" role="tablist" aria-label="Sections">
+    <button type="button" role="tab" id="tab-everyone" aria-controls="panel-everyone" aria-selected="true">Everyone</button>
+    <button type="button" role="tab" id="tab-sponsors" aria-controls="panel-sponsors" aria-selected="false" tabindex="-1">Sponsors</button>
+    <button type="button" role="tab" id="tab-participants" aria-controls="panel-participants" aria-selected="false" tabindex="-1">Participants &amp; teams</button>
+  </div>
+
+
+  <!-- ############################################################
+       TAB 1: EVERYONE (story, what we do, mission, roadmap, team)
+       ############################################################ -->
+  <div class="abt-panel" role="tabpanel" id="panel-everyone" aria-labelledby="tab-everyone">
+
+    <!-- ===== Section 01: Our story ===== -->
+    <section class="abt-sec">
+      <div class="abt-side">
+        <p class="eyebrow"><i data-no-i18n>01</i> <span>Our story</span></p>
+        <h2>Made for people who love the drive.</h2>
+      </div>
+      <div class="abt-body">
+        <p class="lead2">Rally2Rumble is a community of drivers, passengers and partners who believe the best days are spent on the road together. We combine a carefully planned route with a relaxed, premium atmosphere, so that every team can enjoy the day from check-in to prize giving.</p>
+
+        <!-- TO DO: replace the next line with your own text -->
+        <p class="ph" data-no-i18n>[YOUR STORY: how Rally2Rumble started, when, and who started it. 2 to 4 sentences.]</p>
+      </div>
+    </section>
+
+    <!-- ===== Section 02: What we do ===== -->
+    <section class="abt-sec">
+      <div class="abt-side">
+        <p class="eyebrow"><i data-no-i18n>02</i></p>
+        <h2>What we do</h2>
+      </div>
+      <div class="abt-body">
+        <div class="abt-cards rows">
+          <div class="abt-card">
+            <h3>The rally</h3>
+            <p>One route, one set of stages, one day on the road. Every team follows the same turn-by-turn directions, from the start to the finish.</p>
+          </div>
+
+          <div class="abt-card">
+            <h3>The community</h3>
+            <p>A place where teams, drivers and guests meet before and after the day, share photos and stay in touch.</p>
+          </div>
+
+          <div class="abt-card">
+            <h3>The partners</h3>
+            <p>Local businesses join us to reach an engaged audience of car enthusiasts, with visibility on the cars, in the paddock and online.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Section 03: Mission and vision ===== -->
+    <section class="abt-sec">
+      <div class="abt-side">
+        <p class="eyebrow"><i data-no-i18n>03</i></p>
+        <h2>Mission and vision</h2>
+      </div>
+      <div class="abt-body">
+        <div class="abt-cards two">
+          <div class="abt-card">
+            <h3>Our mission</h3>
+            <p>To bring drivers, passengers and partners together for a well-organised day on the road that people want to come back to.</p>
+          </div>
+
+          <div class="abt-card">
+            <h3>Our vision</h3>
+            <p>A respected regional rally and a lasting community of car enthusiasts and local businesses that grows with every edition.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Section 04: What we want to build ===== -->
+    <section class="abt-sec">
+      <div class="abt-side">
+        <p class="eyebrow"><i data-no-i18n>04</i></p>
+        <h2>What we want to build</h2>
+      </div>
+      <div class="abt-body">
+        <ol class="road">
+          <li>
+            <span class="when">Now</span>
+            <p>The first edition, with the route, agenda, team dashboard and community together on one website.</p>
+          </li>
+
+          <li>
+            <span class="when">Next</span>
+            <!-- TO DO: replace the next line with your own text -->
+            <p class="ph" data-no-i18n>[NEXT: your goal for the next 12 months, e.g. the second edition, a new route, more teams]</p>
+          </li>
+
+          <li>
+            <span class="when">Later</span>
+            <!-- TO DO: replace the next line with your own text -->
+            <p class="ph" data-no-i18n>[LATER: your 1 to 3 year vision, e.g. a yearly event, a bigger community, charity partner]</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ===== Section 05: The team ===== -->
+    <section class="abt-sec">
+      <div class="abt-side">
+        <p class="eyebrow"><i data-no-i18n>05</i></p>
+        <h2>The team</h2>
+      </div>
+      <div class="abt-body">
+        <p class="lead2">The people behind Rally2Rumble.</p>
+
+        <div class="abt-team">
+          <div class="abt-person">
+            <div class="mono" data-no-i18n>R2R</div>
+            <b class="ph" data-no-i18n>[Name]</b>
+            <span class="ph" data-no-i18n>[Role]</span>
+          </div>
+
+          <div class="abt-person">
+            <div class="mono" data-no-i18n>R2R</div>
+            <b class="ph" data-no-i18n>[Name]</b>
+            <span class="ph" data-no-i18n>[Role]</span>
+          </div>
+
+          <div class="abt-person">
+            <div class="mono" data-no-i18n>R2R</div>
+            <b class="ph" data-no-i18n>[Name]</b>
+            <span class="ph" data-no-i18n>[Role]</span>
+          </div>
+        </div>
+
+        <!-- TO DO: replace the next line with your own text -->
+        <p class="ph" data-no-i18n>[TEAM: replace the three cards with real names, roles and optionally a photo]</p>
+      </div>
+    </section>
+
+  </div>
+
+
+  <!-- ############################################################
+       TAB 2: SPONSORS (what a partner receives)
+       ############################################################ -->
+  <div class="abt-panel" role="tabpanel" id="panel-sponsors" aria-labelledby="tab-sponsors" hidden>
+
+    <!-- ===== Section 01: Partners ===== -->
+    <section class="abt-sec">
+      <div class="abt-side">
+        <p class="eyebrow"><i data-no-i18n>01</i> <span>Partners</span></p>
+        <h2>Partner with Rally2Rumble</h2>
+      </div>
+      <div class="abt-body">
+        <p class="lead2">Put your brand in front of an engaged audience of car enthusiasts, in the setting where they are most attentive: on the road and in the paddock.</p>
+      </div>
+    </section>
+
+    <!-- ===== Section 02: What a partner receives ===== -->
+    <section class="abt-sec">
+      <div class="abt-side">
+        <p class="eyebrow"><i data-no-i18n>02</i></p>
+        <h2>What a partner receives</h2>
+      </div>
+      <div class="abt-body">
+        <div class="abt-cards">
+          <div class="abt-card">
+            <h3>Logo on car &amp; banners</h3>
+            <p>Your logo on our car and on the event banners.</p>
+          </div>
+
+          <div class="abt-card">
+            <h3>Stand in the paddock</h3>
+            <p>A place in the paddock to meet teams and visitors in person.</p>
+          </div>
+
+          <div class="abt-card">
+            <h3>Social media mentions</h3>
+            <p>Visibility to our community through our social channels.</p>
+          </div>
+
+          <div class="abt-card">
+            <h3>VIP tickets for staff</h3>
+            <p>Invite your own people to experience the day as our guests.</p>
+          </div>
+        </div>
+
+        <!-- TO DO: replace the next line with your own text -->
+        <p class="ph" data-no-i18n>[AUDIENCE: number of participants, visitors and social followers you can promise]</p>
+
+        <!-- TO DO: replace the next line with your own text -->
+        <p class="ph" data-no-i18n>[PACKAGES: tiers and prices, if you want them on the page]</p>
+      </div>
+    </section>
+
+    <!-- === Call-to-action box (the button links to the Contact section) === -->
+    <section class="abt-cta">
+      <div>
+        <h2>Become a partner</h2>
+        <p>Tell us about your business and we will come back with a partnership that fits.</p>
+      </div>
+      <a class="btn" href="#contact">Get in touch</a>
+    </section>
+
+  </div>
+
+
+  <!-- ############################################################
+       TAB 3: PARTICIPANTS & TEAMS (how to join)
+       ############################################################ -->
+  <div class="abt-panel" role="tabpanel" id="panel-participants" aria-labelledby="tab-participants" hidden>
+
+    <!-- ===== Section 01: Join us ===== -->
+    <section class="abt-sec">
+      <div class="abt-side">
+        <p class="eyebrow"><i data-no-i18n>01</i> <span>Join us</span></p>
+        <h2>Join the rally</h2>
+      </div>
+      <div class="abt-body">
+        <p class="lead2">Bring your car, your passengers and your team. We take care of the route, the schedule and the finish line.</p>
+      </div>
+    </section>
+
+    <!-- ===== Section 02: How it works ===== -->
+    <section class="abt-sec">
+      <div class="abt-side">
+        <p class="eyebrow"><i data-no-i18n>02</i></p>
+        <h2>How it works</h2>
+      </div>
+      <div class="abt-body">
+        <ol class="abt-steps">
+          <li>
+            <b data-no-i18n>01</b>
+            <div>
+              <h3>Register your team</h3>
+              <p>Create an account and register your team in a few minutes.</p>
+            </div>
+          </li>
+
+          <li>
+            <b data-no-i18n>02</b>
+            <div>
+              <h3>Get your route</h3>
+              <p>See the turn-by-turn route and the agenda, and download both as a PDF.</p>
+            </div>
+          </li>
+
+          <li>
+            <b data-no-i18n>03</b>
+            <div>
+              <h3>Drive the day</h3>
+              <p>Follow the stages together with your team, from check-in to the finish.</p>
+            </div>
+          </li>
+
+          <li>
+            <b data-no-i18n>04</b>
+            <div>
+              <h3>Celebrate together</h3>
+              <p>Join the prize giving and share your photos with the community.</p>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ===== Section 03: Who can join ===== -->
+    <section class="abt-sec">
+      <div class="abt-side">
+        <p class="eyebrow"><i data-no-i18n>03</i></p>
+        <h2>Who can join</h2>
+      </div>
+      <div class="abt-body">
+        <p class="lead2">Teams of one driver and their passengers.</p>
+
+        <!-- TO DO: replace the next line with your own text -->
+        <p class="ph" data-no-i18n>[ELIGIBILITY: car requirements, licence, minimum age, max passengers, entry fee, registration deadline]</p>
+      </div>
+    </section>
+
+    <!-- === Call-to-action box (sign-up, route and agenda buttons) === -->
+    <section class="abt-cta">
+      <div>
+        <h2>Join the rally</h2>
+        <p>Bring your car, your passengers and your team. We take care of the route, the schedule and the finish line.</p>
+      </div>
+      <div class="row">
+        <a class="btn" href="signup.html">Join the rally</a>
+        <a class="btn ghost" href="route.html">Route</a>
+        <a class="btn ghost" href="agenda.html">Agenda</a>
+      </div>
+    </section>
+
+  </div>
+
+
+  <!-- ===== Section 06: Contact (shown under all three tabs) ===== -->
+  <section class="abt-sec" id="contact">
+    <div class="abt-side">
+      <p class="eyebrow"><i data-no-i18n>06</i> <span>Contact</span></p>
+      <h2>Questions, ideas or a partnership in mind?</h2>
+    </div>
+    <div class="abt-body">
+      <p class="lead2">We would love to hear from you.</p>
+
+      <!-- TO DO: replace the next line with your own text -->
+      <p class="ph" data-no-i18n>[EMAIL: your contact email address, as a link]</p>
+
+      <!-- TO DO: replace the next line with your own text -->
+      <p class="ph" data-no-i18n>[SOCIALS: Instagram / Facebook / LinkedIn links, if any]</p>
+
+      <div class="row" style="margin-top:18px">
+        <a class="btn" href="community.html">Join the Community</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- Scripts that make the menu buttons and the tabs work. Do not change. -->
+<script src="java/java.js"></script>
+<script src="java/about.js"></script>
+</body>
+</html>

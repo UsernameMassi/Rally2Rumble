@@ -1,0 +1,54 @@
+/* Rally2Rumble - About us page. Uses the tokens from style.css / theme.css, so it follows dark and light mode.
+   Load after theme.css, info.css and blueprint.css. Elements with class "ph" are placeholders waiting for your own text. */
+.eyebrow{font:700 12px/1.4 'Space Grotesk',system-ui,sans-serif;letter-spacing:.22em;text-transform:uppercase;color:var(--mute);margin:0 0 14px}
+.eyebrow i{font-style:normal;color:var(--ink);margin-right:10px}
+.abt-hero{padding:56px 0 36px}
+.abt-hero h1{font:400 clamp(24px,5.2vw,52px)/1.2 var(--display);letter-spacing:.04em;text-transform:none;overflow-wrap:break-word;max-width:18ch}
+.abt-hero .lead{margin:22px 0 0;max-width:620px}
+.abt-hero .facts{margin-top:34px}
+.abt-tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin:24px 0 0;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.abt .abt-tabs button{clip-path:none;box-shadow:none;background:transparent;color:var(--mute);font:700 13px/1 'Space Grotesk',system-ui,sans-serif;letter-spacing:.16em;text-transform:uppercase;padding:16px 20px;margin:0 0 -1px;width:auto;min-width:0;border:0;border-bottom:2px solid transparent;white-space:nowrap;flex:none}
+.abt .abt-tabs button:hover{background:transparent;color:var(--ink)}
+.abt .abt-tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--ink)}
+.abt-panel[hidden]{display:none!important}
+.abt-sec{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:12px 48px;padding:52px 0;border-bottom:1px solid var(--line)}
+.abt-side h2{font:400 clamp(18px,2.4vw,26px)/1.3 var(--display);letter-spacing:.05em;text-transform:none;overflow-wrap:break-word}
+.abt-body{min-width:0}
+.abt-body>p{margin:0 0 14px}
+.lead2{font-size:18px;line-height:1.65;color:var(--ink)}
+.abt-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin-bottom:14px}
+.abt-cards.two{grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+.abt-cards.rows{grid-template-columns:minmax(0,1fr)}
+.abt-cards.rows .abt-card{display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px 24px;align-items:baseline}
+.abt-cards.rows .abt-card h3{margin:0}
+.abt-card{background:var(--panel);padding:24px}
+.abt-card h3{font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink);margin:0 0 12px}
+.abt-card p{margin:0;color:var(--mute)}
+.road{list-style:none;margin:0;padding:0 0 0 26px;border-left:1px solid var(--line)}
+.road li{position:relative;padding:0 0 28px}
+.road li:last-child{padding-bottom:0}
+.road li::before{content:"";position:absolute;left:-32px;top:4px;width:11px;height:11px;border:1px solid var(--ink);background:var(--bg);transform:rotate(45deg)}
+.road li:first-child::before{background:var(--ink)}
+.road .when{display:block;font:700 12px/1.4 'Space Grotesk',sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);margin-bottom:6px}
+.road p{margin:0}
+.abt-team{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:18px 0 6px}
+.abt-person{background:var(--panel);border:1px solid var(--line);padding:18px;display:flex;flex-direction:column;gap:6px}
+.abt-person .mono{width:56px;height:56px;border:1px solid var(--ink);display:flex;align-items:center;justify-content:center;font:400 12px var(--display);letter-spacing:.1em;margin-bottom:8px}
+.abt-steps{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.abt-steps li{display:grid;grid-template-columns:56px minmax(0,1fr);gap:16px;padding:20px 0;border-bottom:1px solid var(--line)}
+.abt-steps b{font:400 18px var(--display);color:var(--mute)}
+.abt-steps h3{font-size:15px;letter-spacing:.14em;text-transform:uppercase;margin:0 0 6px}
+.abt-steps p{margin:0;color:var(--mute)}
+.abt-cta{display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap;margin:48px 0 0;padding:34px;background:var(--panel);border:1px solid var(--line);border-top:1px solid var(--ink)}
+.abt-cta h2{font:400 clamp(18px,2.4vw,26px)/1.3 var(--display);letter-spacing:.05em;text-transform:none;margin-bottom:8px}
+.abt-cta p{margin:0;color:var(--mute);max-width:520px}
+.ph{border:1px dashed var(--accent2);padding:10px 12px;margin:12px 0 0;color:var(--mute);font-size:14px;font-weight:400}
+b.ph,span.ph{display:block}
+@media(max-width:760px){
+  .abt-hero{padding:36px 0 24px}
+  .abt-sec{grid-template-columns:minmax(0,1fr);gap:8px;padding:36px 0}
+  .abt .abt-tabs button{padding:14px 14px;font-size:12px;letter-spacing:.1em}
+  .abt-cta{padding:24px}
+  .abt-cards.rows .abt-card{grid-template-columns:minmax(0,1fr)}
+}
+@media print{.abt-tabs{display:none}.abt-panel[hidden]{display:block!important}}

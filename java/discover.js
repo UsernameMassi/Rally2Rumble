@@ -1,17 +1,28 @@
-/* Rally2Rumble - Discover companies in Limburg (pick a city or all of Limburg).
-   Real data: OpenStreetMap (Overpass API, Dutch businesses only). AI ranking: Gemini Flash-Lite.
-   Loaded after java.js. Note: the Gemini key is stored in this browser only.
+/* Rally2Rumble - Discover companies in Limburg.
+   Real data: OpenStreetMap (Overpass API, Dutch businesses only). Optional AI ranking: Gemini Flash-Lite.
+   Loaded after java.js. The Gemini key is stored in this browser only.
+
+   HOW IT WORKS (short)
+   1. Every company gets a free local FIT score (0-100) from keywords, business type, distance and contact details.
+   2. Companies that were found before come from your shared Supabase list, so results appear at once. OpenStreetMap is only
+      asked for new ones (and the request is sent to up to 3 free servers, the first answer wins).
+   3. New companies are saved to Supabase (table found_companies) for everybody on the team.
+   4. The AI (optional) only looks at the best companies nobody has checked yet. Its answers are saved too (table company_ai).
+   Set up the two tables once with supabase-found.sql.
 
    TUNING GUIDE
-   - KEYGROUPS : your keyword lists. weight = how much a hit counts (3 = most relevant). Edit freely.
-   - CATS      : which OpenStreetMap business tags are fetched. [tag, 'value|value|...'].
-   - DEFAULT_EXCLUDE : names to hide (gas stations, big chains). Also editable on the page. */
+   - KEYGROUPS : keyword lists. weight = how much a hit counts. A hit in the company NAME counts extra.
+   - PRIOR     : free points for the OpenStreetMap business type (shop=car, office=estate_agent ...).
+   - PEN       : words in a name that lower the score (snack bars, supermarkets ...).
+   - CATS      : which OpenStreetMap tags are fetched per business type.
+   - DEFAULT_EXCLUDE : names that are always hidden (also editable on the page). */
 (function () {
   'use strict';
   var C = window.R2R_CORE, P = window.R2R_P;
   if (!C || !P) return;
   var esc = C.esc;
-  // Cities / regions you can search around. To add a place, add a row: [name, lat, lon].
+
+  /* ---------- places ---------- */
   var CITIES = [
     ['Maastricht', 50.8514, 5.6910], ['Heerlen', 50.8882, 5.9795], ['Valkenburg', 50.8654, 5.8319], ['Sittard-Geleen', 51.0000, 5.8700],
     ['Landgraaf', 50.9000, 6.0333], ['Stein', 50.9700, 5.7700], ['Venlo', 51.3704, 6.1724], ['Roermond', 51.1942, 5.9870],
@@ -19,211 +30,414 @@
     ['Horst aan de Maas', 51.4530, 6.0480], ['Gennep', 51.6970, 5.9710], ['Meerssen', 50.8870, 5.7500], ['Eijsden-Margraten', 50.7770, 5.7090],
     ['Beek', 50.9400, 5.7960], ['Nederweert', 51.2850, 5.7430], ['Vaals', 50.7700, 6.0170], ['Gulpen-Wittem', 50.8140, 5.8870]
   ];
-  var ALL = 'All of Limburg', ALL_CENTER = { lat: 51.2, lon: 5.9 };  // the whole Dutch province (OSM ISO3166-2 NL-LI)
+  var ALL = 'All of Limburg', ALL_CENTER = { lat: 51.2, lon: 5.9 };
   function center() {
     if (D.city === ALL) return ALL_CENTER;
     for (var i = 0; i < CITIES.length; i++) if (CITIES[i][0] === D.city) return { lat: CITIES[i][1], lon: CITIES[i][2] };
     return { lat: CITIES[0][1], lon: CITIES[0][2] };
   }
-  function placeText() { return D.city === ALL ? 'Limburg' : D.radius + ' km of ' + D.city; }
+
+  /* ---------- settings ---------- */
   var DEFAULT_MODEL = 'gemini-2.5-flash-lite';
-  var ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+  var ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+  var CACHE_VER = 'v4', SEARCH_HOURS = 12, AI_DAYS = 60, BATCH = 25, PAGE = 30, MIN_FIT = 12;
   var DEFAULT_EXCLUDE = 'shell, bp, total, esso, tango, tinq, texaco, q8, avia, tankstation, tamoil, gulf, argos, lukoil, firezone, tank, benzine, mcdonald, kfc, pizza hut, starbucks, new york pizza, burger king, subway, domino, lidl, aldi, albert heijn, jumbo, gamma, praxis';
 
+  /* ---------- the algorithm: keywords ----------
+     weight 4 = automotive (most relevant) ... 0.5 = weak hint. Words up to 5 letters only match at the START of a word
+     (so "lease" does not match "release"); longer words match anywhere (so "autodealer" matches "dealer"). */
   var KEYGROUPS = [
-    { name: 'Automotive', weight: 3, cat: 'Automotive', kws: ['automotive', 'autobedrijf', 'autodealer', 'dealer', 'premium cars', 'sportwagens', 'performance cars', 'luxury cars', 'occasions', 'exclusive cars', 'car detailing', 'detailing', 'car care', 'ceramic coating', 'autopoetsbedrijf', 'wrapping', 'car wrap', 'vehicle wrapping', 'ppf', 'paint protection', 'tuning', 'chiptuning', 'performance tuning', 'ecu', 'uitlaat', 'velgen', 'alloy wheels', 'banden', 'performance tyres', 'auto accessoires', 'dashcam', 'car audio', 'car electronics', 'automotive parts', 'motorsport', 'racewear', 'racing'] },
-    { name: 'Brands & specialists', weight: 3, cat: 'Automotive', kws: ['porsche', 'bmw', 'mercedes', 'amg', 'audi', 'ferrari', 'lamborghini', 'mclaren', 'aston martin', 'classic cars', 'youngtimer', 'exotic cars'] },
-    { name: 'Premium lifestyle', weight: 2, cat: 'Luxury & lifestyle', kws: ['luxury', 'premium', 'high-end', 'exclusive', 'lifestyle', 'watches', 'horloge', 'juwelier', 'jewelry', 'jewellery', 'herenmode', 'menswear', 'luxury fashion', 'sunglasses', 'eyewear'] },
-    { name: 'Finance & property', weight: 2, cat: 'Finance & property', kws: ['real estate', 'makelaar', 'vastgoed', 'projectontwikkeling', 'wealth', 'vermogensbeheer', 'investment', 'financieel advies', 'financial', 'private banking', 'insurance', 'verzekering', 'lease', 'hypotheek', 'consultancy', 'zakelijke dienstverlening', 'entrepreneur'] },
-    { name: 'Hospitality & events', weight: 1, cat: 'Hospitality', kws: ['hotel', 'boutique hotel', 'resort', 'restaurant', 'fine dining', 'winery', 'wijnhandel', 'wijn', 'delicatessen', 'catering', 'event location', 'golf', 'wellness'] },
-    { name: 'Group dining', weight: 2, noName: true, cat: 'Restaurants (group lunch)', kws: ['feestzaal', 'partycentrum', 'brasserie', 'grand caf', 'kasteel', 'banquet', 'buffet', 'catering', 'groepsarrangement', 'zalen'] }
+    { name: 'Automotive', weight: 4, cat: 'Automotive', kws: ['automotive', 'autobedrijf', 'autodealer', 'dealer', 'premium cars', 'sportwagens', 'sportauto', 'performance cars', 'luxury cars', 'occasions', 'exclusive cars', 'supercar', 'hypercar',
+      'car detailing', 'detailing', 'car care', 'ceramic coating', 'keramische coating', 'autopoetsbedrijf', 'autopoets', 'wrapping', 'car wrap', 'carwrap', 'vehicle wrapping', 'ppf', 'paint protection',
+      'tuning', 'chiptuning', 'performance tuning', 'ecu', 'uitlaat', 'exhaust', 'velgen', 'alloy wheels', 'banden', 'performance tyres', 'tyres', 'auto accessoires', 'dashcam', 'car audio', 'car electronics',
+      'automotive parts', 'autoparts', 'onderdelen', 'motorsport', 'autosport', 'racewear', 'racing', 'race', 'trackday', 'track day', 'circuit', 'karting', 'rally', 'carrosserie', 'lakspuiterij', 'spuitwerk', 'autoverhuur', 'car rental'] },
+    { name: 'Brands & specialists', weight: 4, cat: 'Automotive', kws: ['porsche', 'bmw', 'mercedes', 'amg', 'audi', 'ferrari', 'lamborghini', 'mclaren', 'aston martin', 'bentley', 'maserati', 'bugatti', 'lotus', 'rolls-royce', 'rolls royce',
+      'alpina', 'brabus', 'abt', 'techart', 'akrapovic', 'classic cars', 'classic car', 'youngtimer', 'oldtimer', 'klassieker', 'exotic'] },
+    { name: 'Performance parts & tyre brands', weight: 3, cat: 'Automotive', kws: ['michelin', 'pirelli', 'bridgestone', 'continental', 'goodyear', 'vredestein', 'yokohama', 'hankook', 'toyo', 'bbs', 'oz racing', 'vossen', 'recaro', 'bilstein', 'eibach', 'ohlins', 'brembo', 'sparco'] },
+    { name: 'Premium lifestyle', weight: 2, cat: 'Luxury & lifestyle', kws: ['luxury', 'luxe', 'premium', 'high-end', 'exclusive', 'exclusief', 'lifestyle', 'watches', 'horloge', 'horlogerie', 'rolex', 'omega', 'breitling', 'juwelier', 'jewelry', 'jewellery', 'goudsmid',
+      'herenmode', 'menswear', 'maatpak', 'kleermaker', 'tailor', 'bespoke', 'luxury fashion', 'sunglasses', 'eyewear', 'optiek', 'brillen', 'whisky', 'cigar', 'sigaren', 'champagne', 'yacht', 'jacht', 'barber'] },
+    { name: 'Finance & property', weight: 2, cat: 'Finance & property', kws: ['real estate', 'makelaar', 'vastgoed', 'projectontwikkeling', 'wealth', 'vermogensbeheer', 'investment', 'beleggen', 'financieel advies', 'financieel', 'financial', 'private banking',
+      'insurance', 'verzekering', 'assurantie', 'lease', 'leasing', 'financial lease', 'private lease', 'zakelijke lease', 'hypotheek', 'business consultancy', 'consultancy', 'entrepreneur', 'ondernemer', 'zakelijke dienstverlening', 'notaris', 'accountant', 'family office'] },
+    { name: 'Hospitality & events', weight: 1.5, cat: 'Hospitality', kws: ['hotel', 'luxury hotel', 'boutique hotel', 'resort', 'restaurant', 'fine dining', 'sterren', 'winery', 'wijnhandel', 'wijn', 'wine', 'delicatessen', 'catering', 'event location', 'evenementenlocatie',
+      'golf', 'golfclub', 'wellness', 'spa', 'thermen', 'landgoed', 'brouwerij', 'distillery', 'chocolatier'] },
+    { name: 'Group dining', weight: 2, noName: true, cat: 'Restaurants (group lunch)', kws: ['feestzaal', 'partycentrum', 'brasserie', 'grand caf', 'kasteel', 'banquet', 'buffet', 'groepsarrangement', 'zalen', 'catering'] },
+    { name: 'Bigger business', weight: 0.5, noName: true, cat: '', kws: ['groep', 'group', 'international', 'holding'] }
   ];
+  var NOTAFTER = { audi: '(?!o)' };                                    // "audi" must not match "audio"
+  function reEsc(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+  KEYGROUPS.forEach(function (g) {
+    g.m = g.kws.map(function (k) { var e = reEsc(k); return { k: k, re: new RegExp((k.length <= 5 ? '(^|[^a-z0-9])' : '') + e + (NOTAFTER[k] || '')) }; });
+  });
+  /* free points for the OpenStreetMap business type */
+  var PRIOR = { 'shop=car': 7, 'shop=car_repair': 3, 'shop=car_parts': 4, 'shop=tyres': 4, 'shop=motorcycle': 2, 'amenity=car_rental': 2, 'sport=karting': 4, 'sport=motor': 5,
+    'shop=jewelry': 4, 'shop=watches': 5, 'shop=boutique': 2, 'shop=optician': 2, 'shop=wine': 3, 'shop=deli': 2, 'shop=antiques': 2, 'shop=tailor': 3, 'shop=alcohol': 1,
+    'office=estate_agent': 4, 'office=financial_advisor': 5, 'office=financial': 3, 'office=insurance': 2, 'office=consulting': 2, 'office=accountant': 1, 'office=tax_advisor': 1, 'office=notary': 1,
+    'tourism=hotel': 3, 'tourism=resort': 4, 'leisure=golf_course': 5, 'leisure=spa': 3, 'amenity=events_venue': 3, 'amenity=conference_centre': 2, 'craft=winery': 3, 'craft=caterer': 2 };
+  var PEN = /snackbar|cafetaria|frituur|shoarma|kebab|d[oö]ner|pizzeria|supermarkt|tankstation|wasstraat|autowas|sloop|sloperij|schadeauto|tuincentrum|bouwmarkt|nagel|schoonheid|massage/i;
+  /* names searched directly in OpenStreetMap, even when the business has no helpful type tag */
+  var NAME_TERMS = ['porsche', 'ferrari', 'lamborghini', 'mclaren', 'aston martin', 'bentley', 'maserati', 'alpina', 'brabus', 'mercedes', 'audi', 'bmw', 'detailing', 'wrapping', 'carwrap', 'car wrap', 'coating', 'tuning',
+    'motorsport', 'autosport', 'racing', 'racewear', 'performance', 'classic car', 'youngtimer', 'oldtimer', 'exotic', 'supercar', 'dashcam', 'car audio', 'velgen', 'banden', 'uitlaat', 'sportwagen'];
+
   var CATS = {
-    'Automotive': [['shop', 'car|car_repair|car_parts|tyres|motorcycle|motorcycle_repair'], ['amenity', 'car_rental']],
-    'Luxury & lifestyle': [['shop', 'jewelry|watches|boutique|optician|wine|deli|antiques'], ['craft', 'jeweller']],
-    'Finance & property': [['office', 'estate_agent|financial|financial_advisor|insurance|accountant|tax_advisor|consulting|lawyer']],
-    'Hospitality': [['tourism', 'hotel|resort|guest_house'], ['leisure', 'golf_course|resort|spa'], ['amenity', 'events_venue|conference_centre'], ['craft', 'winery|caterer']],
+    'Automotive': [['shop', 'car|car_repair|car_parts|tyres|motorcycle|motorcycle_repair'], ['amenity', 'car_rental'], ['sport', 'karting|motor']],
+    'Luxury & lifestyle': [['shop', 'jewelry|watches|boutique|optician|wine|deli|antiques|tailor|alcohol'], ['craft', 'jeweller'], ['shop', 'clothes', '["name"~"heren|menswear|men|fashion|couture|boutique|tailor|bespoke",i]']],
+    'Finance & property': [['office', 'estate_agent|financial|financial_advisor|insurance|accountant|tax_advisor|consulting|lawyer|notary']],
+    'Hospitality': [['tourism', 'hotel|resort|guest_house'], ['leisure', 'golf_course|resort|spa'], ['amenity', 'events_venue|conference_centre'], ['craft', 'winery|caterer|brewery']],
     'Restaurants (group lunch)': [['amenity', 'restaurant', '["capacity"~"^[1-9][0-9]{2,}$"]'], ['amenity', 'restaurant', '["name"~"zaal|zalen|feest|party|grand caf|brasserie|kasteel|ch.teau|catering|banquet|groeps|hotel",i]'], ['amenity', 'restaurant', '["wikidata"]']]
   };
   var CATNAMES = Object.keys(CATS);
-  var D = { city: 'Maastricht', radius: 25, cats: CATNAMES.slice(), groups: KEYGROUPS.map(function (g) { return g.name; }), kw: [], results: [], picked: {}, ai: {}, busy: '', msg: '', err: '' };
+  var LAB = { 'Automotive': 'Cars & motorsport', 'Luxury & lifestyle': 'Luxury & lifestyle', 'Finance & property': 'Finance & property', 'Hospitality': 'Hotels & events', 'Restaurants (group lunch)': 'Group restaurants' };
+  var HINT = { 'Automotive': 'Dealers, detailing, wrapping, tuning, tyres, motorsport', 'Luxury & lifestyle': 'Watches, jewellers, menswear, eyewear', 'Finance & property': 'Estate agents, wealth, leasing, insurance',
+    'Hospitality': 'Hotels, golf, wellness, wine, catering', 'Restaurants (group lunch)': 'Places that can host 100+ people for lunch' };
 
+  /* ---------- state ---------- */
+  var prefs = C.rd('r2r_disc_prefs', {}) || {};
+  var D = { city: prefs.city || 'Maastricht', radius: prefs.radius || 25, cats: Array.isArray(prefs.cats) && prefs.cats.length ? prefs.cats.filter(function (c) { return CATS[c]; }) : CATNAMES.slice(),
+    results: [], picked: {}, ai: {}, aiAll: null, known: {}, knownN: 0, q: '', shown: PAGE, weak: false, more: false, busy: '', phase: '', msg: '', err: '', cloud: '', cloudErr: '', seq: 0 };
+  if (!D.cats.length) D.cats = CATNAMES.slice();
+  function savePrefs() { C.wr('r2r_disc_prefs', { city: D.city, radius: D.radius, cats: D.cats }); }
   function cfg() { var c = C.rd('r2r_gemini', {}); return { key: c.key || '', model: c.model || DEFAULT_MODEL }; }
   function exclude() { var e = C.rd('r2r_exclude', null); return e == null ? DEFAULT_EXCLUDE : e; }
   function clamp(n) { n = Math.round(+n); return isNaN(n) ? 50 : Math.max(0, Math.min(100, n)); }
   function cap(s) { s = String(s || ''); return s.charAt(0).toUpperCase() + s.slice(1); }
-  function reEsc(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-  function activeGroups() { return KEYGROUPS.filter(function (g) { return D.groups.indexOf(g.name) > -1; }); }
-
-  /* ---------- OpenStreetMap ---------- */
-  function buildQuery() {
-    var AVOID = '["amenity"!~"^(fuel|car_wash|charging_station)$"]', r = D.radius * 1000, ctr = center(), whole = D.city === ALL,
-      around = whole ? '(area.lim);' : '(area.nl)(around:' + r + ',' + ctr.lat + ',' + ctr.lon + ');', parts = [];
-    D.cats.forEach(function (c) { CATS[c].forEach(function (f) { parts.push('nwr["name"]["' + f[0] + '"~"^(' + f[1] + ')$"]' + (f[2] || '') + AVOID + around); }); });
-    // name search: companies whose NAME contains a high-value keyword (brands, tuning, detailing, luxury ...)
-    var terms = [];
-    activeGroups().forEach(function (g) { if (g.weight >= 2 && !g.noName) g.kws.forEach(function (k) { if (k.length >= 4 && terms.indexOf(k) < 0) terms.push(reEsc(k)); }); });
-    if (terms.length) parts.push('nwr["name"~"' + terms.join('|') + '",i]' + AVOID + around);
-    return '[out:json][timeout:180];area["ISO3166-1"="NL"][admin_level=2]->.nl;' + (whole ? 'area["ISO3166-2"="NL-LI"][admin_level=4]->.lim;' : '') + '(' + parts.join('') + ');out center tags ' + (whole ? 3000 : 1500) + ';';
+  function cloud() { return C.sb.on(); }
+  function okId(id) { return /^osm[nwr]\d+$/.test(String(id)); }
+  function ctxId() {                                                   // AI answers belong to one event setup
+    var ev = C.state.event || {}, s = JSON.stringify([ev.name, ev.date, ev.place, CACHE_VER]), h = 5381, i;
+    for (i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+    return 'e' + (h >>> 0).toString(36);
   }
+
+  /* ---------- clean-up for data that came from the shared list (treated as untrusted) ---------- */
+  function safeUrl(v) {
+    v = String(v || '').trim().slice(0, 200); if (!v) return '';
+    if (!/^https?:\/\//i.test(v)) { if (/^[\w.-]+\.[a-z]{2,}(\/\S*)?$/i.test(v)) v = 'https://' + v; else return ''; }
+    return /^https?:\/\/[^\s"'<>]+$/i.test(v) ? v : '';
+  }
+  function firstEmail(v) { var m = String(v || '').match(/[^\s;,<>"']+@[^\s;,<>"']+\.[a-z]{2,}/i); return m ? m[0].slice(0, 120) : ''; }
+  function osmLink(id) { var m = /^osm([nwr])(\d+)$/.exec(id); return m ? 'https://www.openstreetmap.org/' + { n: 'node', w: 'way', r: 'relation' }[m[1]] + '/' + m[2] : '#'; }
+
+  /* ---------- scoring ---------- */
   function km(a, b, c, d) {
     var R = 6371, t = Math.PI / 180, x = (c - a) * t, y = (d - b) * t;
     var h = Math.sin(x / 2) * Math.sin(x / 2) + Math.cos(a * t) * Math.cos(c * t) * Math.sin(y / 2) * Math.sin(y / 2);
     return 2 * R * Math.asin(Math.sqrt(h));
   }
+  function scoreRec(r) {
+    var nm = r.name.toLowerCase(), rest = (r.tt + ' ' + r.txt).toLowerCase(), s = 0, hits = [], topW = 0, topCat = '';
+    KEYGROUPS.forEach(function (g) {
+      var n = 0, nn = 0;
+      g.m.forEach(function (m) { var inN = m.re.test(nm); if (inN || m.re.test(rest)) { n++; if (inN) nn++; if (hits.indexOf(m.k) < 0) hits.push(m.k); } });
+      if (n) { s += g.weight * (Math.min(n, 3) + 0.5 * Math.min(nn, 2)); if (g.name === 'Brands & specialists' && nn) s += 5; if (g.cat && g.weight > topW) { topW = g.weight; topCat = g.cat; } }   // a premium brand in the NAME is a strong sign
+    });
+    var prior = 0; r.tt.split(' ').forEach(function (x) { if (PRIOR[x]) prior += PRIOR[x]; }); prior = Math.min(prior, 9);
+    if (r.cap >= 100) { s += 8; hits.unshift('seats ' + r.cap); } else if (r.cap >= 50) s += 3;
+    if (r.wd) s += 2; if (r.web) s += 1; if (r.email) s += 1;
+    if (PEN.test(nm)) s -= 6;
+    var raw = Math.max(0, s + prior), f = Math.round(100 * (1 - Math.exp(-raw / 9)));
+    if (D.city !== ALL) f = Math.round(f * (1 - Math.min(r.km, 60) / 260));      // closer is a bit better
+    r.hits = hits.slice(0, 6); r.kscore = Math.round(raw * 10) / 10; r.fit = Math.max(0, Math.min(98, f));
+    if (!r.cat) r.cat = topCat || 'Other';
+    r.value = r.cap >= 100 || r.fit >= 65 ? 'high' : r.fit >= 40 ? 'medium' : 'low';
+  }
+  function critOf(r) {                                                 // the four bars on the sponsor page, worked out locally
+    var aud = { 'Automotive': 90, 'Luxury & lifestyle': 85, 'Finance & property': 75, 'Hospitality': 70, 'Restaurants (group lunch)': 55 }[r.cat] || 35;
+    var prox = D.city === ALL ? 70 : Math.max(10, Math.round(100 - r.km * 2.2));
+    var mot = /motorsport|racing|race|rally|track|circuit|karting|porsche|ferrari|lamborghini|mclaren|amg|aston/.test(r.hits.join(' ')) ? 90 : r.cat === 'Automotive' ? 65 : 20;
+    return [r.fit, aud, prox, mot];
+  }
+  function build(id, name, lat, lon, d) {
+    var c = center(), r = { id: id, name: String(name || '').slice(0, 200), lat: lat, lon: lon, type: String(d.type || '').slice(0, 60), cat: CATS[d.cat] ? d.cat : '', city: String(d.city || '').slice(0, 80),
+      addr: String(d.addr || '').slice(0, 120), web: safeUrl(d.web), phone: String(d.phone || '').slice(0, 40), email: firstEmail(d.email), cap: +d.cap || 0, wd: d.wd ? 1 : 0,
+      tt: String(d.tt || '').slice(0, 120), txt: String(d.txt || '').slice(0, 420) };
+    r.osm = osmLink(id); r.km = km(c.lat, c.lon, lat, lon); scoreRec(r); return r;
+  }
+  function dOf(r) { return { type: r.type, cat: r.cat, city: r.city, addr: r.addr, web: r.web, phone: r.phone, email: r.email, cap: r.cap, wd: r.wd, tt: r.tt, txt: r.txt }; }
+
+  /* ---------- OpenStreetMap ---------- */
+  function buildQuery() {
+    var AVOID = '["amenity"!~"^(fuel|car_wash|charging_station)$"]', r = D.radius * 1000, ctr = center(), whole = D.city === ALL,
+      around = whole ? '(area.lim);' : '(area.lim)(around:' + r + ',' + ctr.lat + ',' + ctr.lon + ');', parts = [];
+    D.cats.forEach(function (c) { CATS[c].forEach(function (f) { parts.push('nwr["name"]["' + f[0] + '"~"^(' + f[1] + ')$"]' + (f[2] || '') + AVOID + around); }); });
+    if (D.cats.indexOf('Automotive') > -1) parts.push('nwr["name"~"' + NAME_TERMS.map(reEsc).join('|') + '",i]' + AVOID + around);
+    return '[out:json][timeout:90];area["ISO3166-2"="NL-LI"][admin_level=4]->.lim;(' + parts.join('') + ');out center tags qt ' + (whole ? 3000 : 1500) + ';';
+  }
+  var NOISE = /^(source|opening_hours|check_date|survey|wheelchair|addr:|ref|fax|contact:fax|payment:|fhrs|brand:wiki|name:|old_name|note|fixme|operator:|wikipedia|wikidata|phone|contact:phone|email|contact:email|website|contact:website|url|facebook|instagram|contact:)/;
+  function textOf(t) {
+    var out = [];
+    Object.keys(t).forEach(function (k) {
+      if (k === 'name' || NOISE.test(k)) return;
+      var v = String(t[k]); out.push(v === 'yes' ? k.replace(/[:_]/g, ' ') : v.replace(/_/g, ' '));
+    });
+    var w = t.website || t['contact:website'] || ''; if (w) out.push(String(w).replace(/^https?:\/\/(www\.)?/i, '').split('/')[0]);
+    return out.join(' ').toLowerCase().slice(0, 420);
+  }
   function catOf(t) {
     for (var c in CATS) for (var i = 0; i < CATS[c].length; i++) { var f = CATS[c][i]; if (t[f[0]] && new RegExp('^(' + f[1] + ')$').test(t[f[0]])) return c; }
     return '';
   }
-  function typeOf(t) { return String(t.shop || t.craft || t.office || t.amenity || t.tourism || t.leisure || '').replace(/_/g, ' '); }
-  function score(r, text) {
-    var hits = [], s = 0, topCat = '', topW = 0;
-    KEYGROUPS.forEach(function (g) {
-      var n = 0;
-      g.kws.forEach(function (k) { if (text.indexOf(k) > -1) { n++; if (hits.indexOf(k) < 0) hits.push(k); } });
-      if (n) { s += g.weight * Math.min(n, 3); if (g.weight > topW) { topW = g.weight; topCat = g.cat; } }
-    });
-    r.hits = hits.slice(0, 6); r.kscore = s; if (!r.cat) r.cat = topCat || 'Other';
-  }
+  function typeOf(t) { return String(t.shop || t.craft || t.office || t.amenity || t.tourism || t.leisure || t.sport || '').replace(/_/g, ' '); }
   function parse(els) {
     var seen = {}, out = [];
     els.forEach(function (e) {
       var t = e.tags || {}; if (!t.name) return;
-      if (/^(fuel|car_wash|charging_station)$/.test(t.amenity) || /^(convenience|kiosk|supermarket)$/.test(t.shop) || Object.keys(t).some(function (k) { return k.indexOf('fuel:') === 0; })) return;              // gas stations / car washes are not sponsor leads
+      if (/^(fuel|car_wash|charging_station)$/.test(t.amenity) || /^(convenience|kiosk|supermarket)$/.test(t.shop) || Object.keys(t).some(function (k) { return k.indexOf('fuel:') === 0; })) return;
       var la = e.lat != null ? e.lat : e.center && e.center.lat, lo = e.lon != null ? e.lon : e.center && e.center.lon; if (la == null || lo == null) return;
-      if ((t['addr:country'] || 'NL').toUpperCase() !== 'NL') return;
       var id = 'osm' + e.type.charAt(0) + e.id; if (seen[id]) return; seen[id] = 1;
-      var r = { id: id, name: t.name, type: typeOf(t), cat: catOf(t), city: t['addr:city'] || '',
-        addr: [t['addr:street'], t['addr:housenumber'], t['addr:postcode']].filter(Boolean).join(' '),
-        web: t.website || t['contact:website'] || '', phone: t.phone || t['contact:phone'] || '', email: t.email || t['contact:email'] || '',
-        km: km(center().lat, center().lon, la, lo), osm: 'https://www.openstreetmap.org/' + e.type + '/' + e.id };
-      var text = Object.keys(t).map(function (k) { return t[k]; }).join(' ').toLowerCase();
-      score(r, text);
-      r.cap = parseInt(t.capacity || t['capacity:seats'], 10) || 0;
-      if (r.cap >= 100) { r.kscore += 8; r.hits.unshift('seats ' + r.cap); } else if (r.cap >= 50) r.kscore += 3;
-      if (t.wikidata) r.kscore += 2;
-      out.push(r);
+      var tt = ['shop', 'craft', 'office', 'amenity', 'tourism', 'leisure', 'sport'].filter(function (k) { return t[k]; }).map(function (k) { return k + '=' + t[k]; }).join(' ');
+      out.push(build(id, t.name, la, lo, { type: typeOf(t), cat: catOf(t), city: t['addr:city'] || '', addr: [t['addr:street'], t['addr:housenumber'], t['addr:postcode']].filter(Boolean).join(' '),
+        web: t.website || t['contact:website'] || '', phone: t.phone || t['contact:phone'] || '', email: t.email || t['contact:email'] || '', cap: parseInt(t.capacity || t['capacity:seats'], 10) || 0, wd: t.wikidata ? 1 : 0, tt: tt, txt: textOf(t) }));
     });
-    return out.sort(function (a, b) { return b.kscore - a.kscore || a.km - b.km; });
+    return out;
   }
-  function tryEndpoint(i, q) {
-    var ac = new AbortController(), t = setTimeout(function () { ac.abort(); }, 200000);
-    return fetch(ENDPOINTS[i], { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: q, signal: ac.signal })
-      .then(function (r) { clearTimeout(t); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .catch(function (e) { clearTimeout(t); if (i + 1 < ENDPOINTS.length) return tryEndpoint(i + 1, q); throw e; });
+  function dedupe(list) {                                              // same name in the same town = one company (keep the best)
+    var m = {};
+    list.forEach(function (r) { var k = r.name.toLowerCase().replace(/[^a-z0-9]/g, '') + '|' + r.city.toLowerCase(); if (!m[k] || r.fit > m[k].fit) m[k] = r; });
+    return Object.keys(m).map(function (k) { return m[k]; });
   }
-  function search() {
-    if (!D.cats.length && !D.groups.length) { D.err = 'Pick at least one category or keyword group.'; C.draw(); return; }
-    D.busy = 'search'; D.err = ''; D.msg = ''; D.ai = {}; D.picked = {}; C.draw();
-    tryEndpoint(0, 'data=' + encodeURIComponent(buildQuery())).then(function (j) {
-      D.results = parse(j.elements || []); D.busy = ''; D.msg = D.results.length + ' real Dutch companies found ' + (D.city === ALL ? 'in all of Limburg' : 'within ' + placeText()) + ', best keyword matches first.'; C.draw();
-    }).catch(function (e) { D.busy = ''; D.err = 'OpenStreetMap search failed (' + e.message + '). The free server may be busy, try again in a minute or use a smaller radius or a single city.'; C.draw(); });
-  }
-  function excluded(name) {
-    var n = name.toLowerCase();
-    return exclude().split(',').map(function (w) { return w.trim().toLowerCase(); }).filter(Boolean).some(function (w) { return new RegExp('(^|[^a-z0-9])' + reEsc(w) + '($|[^a-z0-9])').test(n); });
-  }
-  function view() {
-    var k = D.kw.map(function (w) { return w.toLowerCase(); });
-    var l = D.results.filter(function (r) {
-      if (excluded(r.name)) return false;
-      if (!k.length) return true;
-      var h = (r.name + ' ' + r.type + ' ' + r.cat + ' ' + r.web + ' ' + r.city + ' ' + r.hits.join(' ')).toLowerCase();
-      return k.some(function (w) { return h.indexOf(w) > -1; });
+  /* send the query to up to 3 free servers: the 2nd starts after 6 s, the 3rd after 12 s (or at once when one fails). First good answer wins. */
+  function overpass(q) {
+    return new Promise(function (resolve, reject) {
+      var done = false, next = 0, fails = 0, ctrls = [], timers = [];
+      function finish(fn, v) { if (done) return; done = true; timers.forEach(clearTimeout); ctrls.forEach(function (c) { try { c.abort(); } catch (e) {} }); fn(v); }
+      function fail(e) { if (done) return; fails++; if (fails >= ENDPOINTS.length) finish(reject, e); else launch(); }
+      function launch() {
+        if (done || next >= ENDPOINTS.length) return;
+        var i = next++, ac = new AbortController(); ctrls.push(ac); timers.push(setTimeout(function () { ac.abort(); }, 100000));
+        fetch(ENDPOINTS[i], { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(q), signal: ac.signal })
+          .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+          .then(function (j) {
+            if (!j || !j.elements) throw new Error('empty answer');
+            if (j.remark && /error|timed out|out of memory/i.test(j.remark) && !j.elements.length) throw new Error('server too busy');
+            finish(resolve, j);
+          }).catch(fail);
+      }
+      launch(); timers.push(setTimeout(launch, 6000)); timers.push(setTimeout(launch, 12000));
     });
-    if (Object.keys(D.ai).length) l.sort(function (a, b) { return (D.ai[b.id] ? D.ai[b.id].match : -1) - (D.ai[a.id] ? D.ai[a.id].match : -1); });
-    return l;
   }
 
-  /* ---------- Gemini Flash-Lite ---------- */
+  /* ---------- saved search (this browser, 12 hours) ---------- */
+  var SK = 'r2r_found_' + CACHE_VER;
+  function qkey() { return [D.city, D.city === ALL ? 0 : D.radius, D.cats.slice().sort().join('+')].join('|'); }
+  function cacheGet(k) { var e = (C.rd(SK, {}) || {})[k]; return e && Date.now() - e.t < SEARCH_HOURS * 3600000 ? e : null; }
+  function cacheSet(k, list) {
+    var c = C.rd(SK, {}) || {}; c[k] = { t: Date.now(), list: list.slice().sort(function (a, b) { return b.fit - a.fit; }).slice(0, 500).map(function (r) { return [r.id, r.name, r.lat, r.lon, dOf(r)]; }) };
+    Object.keys(c).sort(function (a, b) { return c[b].t - c[a].t; }).slice(4).forEach(function (x) { delete c[x]; });
+    C.wr(SK, c);
+  }
+  function ago(t) { var m = Math.round((Date.now() - t) / 60000); return m < 60 ? Math.max(1, m) + ' min ago' : Math.round(m / 60) + ' h ago'; }
+
+  /* ---------- shared list in Supabase (tables found_companies + company_ai, see supabase-found.sql) ---------- */
+  function cloudFail(e) { var m = (e && e.message) || String(e); D.cloud = /schema cache|does not exist|relation|could not find/i.test(m) ? 'missing' : 'error'; D.cloudErr = m; chip(); }
+  function chipHtml() {
+    var t, c;
+    if (!cloud()) { c = 'off'; t = 'Saved on this device only'; }
+    else if (D.cloud === 'missing') { c = 'warn'; t = 'Shared list: setup needed'; }
+    else if (D.cloud === 'error') { c = 'warn'; t = 'Shared list unavailable'; }
+    else { c = 'ok'; t = '\u2601 Shared list on' + (D.knownN ? ' \u00b7 ' + D.knownN + ' saved' : ''); }
+    return '<span class="dc-chip ' + c + '" id="dcchip">' + esc(t) + '</span>';
+  }
+  function chip() { var e = document.getElementById('dcchip'); if (e) e.outerHTML = chipHtml(); }
+  function dbLoad() {                                                  // companies found before, inside the chosen area
+    if (!cloud() || D.cloud === 'missing') return Promise.resolve([]);
+    var base = '/rest/v1/found_companies?select=id,name,lat,lon,d&order=id&limit=1000', c = center(), all = [];
+    if (D.city !== ALL) {
+      var dl = D.radius / 111, dn = D.radius / (111 * Math.cos(c.lat * Math.PI / 180));
+      base += '&lat=gte.' + (c.lat - dl).toFixed(4) + '&lat=lte.' + (c.lat + dl).toFixed(4) + '&lon=gte.' + (c.lon - dn).toFixed(4) + '&lon=lte.' + (c.lon + dn).toFixed(4);
+    }
+    function page(o) { return C.sb.json('GET', base + '&offset=' + o).then(function (a) { a = a || []; all = all.concat(a); return a.length === 1000 && o < 4000 ? page(o + 1000) : all; }); }
+    return page(0).then(function (a) { D.cloud = 'ok'; return a; }, function (e) { cloudFail(e); return []; });
+  }
+  function dbSave(list) {                                              // only companies the shared list does not have yet
+    if (!cloud() || D.cloud === 'missing') return Promise.resolve(0);
+    var rows = list.filter(function (r) { return !D.known[r.id] && r.kscore > 0 && okId(r.id); }).slice(0, 1500).map(function (r) { return { id: r.id, name: r.name, lat: r.lat, lon: r.lon, d: dOf(r) }; }), chunks = [], i;
+    for (i = 0; i < rows.length; i += 250) chunks.push(rows.slice(i, i + 250));
+    return Promise.all(chunks.map(function (ch) {
+      return C.sb.req('POST', '/rest/v1/found_companies', ch, { Prefer: 'resolution=ignore-duplicates,return=minimal' }).then(function (res) {
+        if (res.ok) { ch.forEach(function (x) { D.known[x.id] = 1; }); return ch.length; }
+        return res.text().then(function (t) { cloudFail(new Error(t)); return 0; });
+      }, function (e) { cloudFail(e); return 0; });
+    })).then(function (a) { var n = a.reduce(function (x, y) { return x + y; }, 0); D.knownN += n; chip(); return n; });
+  }
+  function cleanAi(x) { return { match: clamp(x.match != null ? x.match : x.m), value: ['low', 'medium', 'high'].indexOf(x.value || x.v) > -1 ? (x.value || x.v) : 'medium', reason: String(x.reason || x.r || '').slice(0, 160), t: +x.t || Date.now() }; }
+  function aiLocal() {
+    var c = C.rd('r2r_ai_' + CACHE_VER, null), ctx = ctxId(), out = {};
+    if (c && c.ctx === ctx && c.items) Object.keys(c.items).forEach(function (id) { if (Date.now() - c.items[id].t < AI_DAYS * 86400000) out[id] = c.items[id]; });
+    return out;
+  }
+  function aiLocalSave() { var keys = Object.keys(D.aiAll); if (keys.length > 2000) keys.sort(function (a, b) { return D.aiAll[a].t - D.aiAll[b].t; }).slice(0, keys.length - 2000).forEach(function (k) { delete D.aiAll[k]; }); C.wr('r2r_ai_' + CACHE_VER, { ctx: ctxId(), items: D.aiAll }); }
+  function aiLoadAll() {                                               // AI answers: this browser first, then the team's (one request)
+    if (D.aiAll) return Promise.resolve();
+    D.aiAll = aiLocal();
+    if (!cloud() || D.cloud === 'missing') return Promise.resolve();
+    var ctx = ctxId(), n = 0;
+    function page(o) {
+      return C.sb.json('GET', '/rest/v1/company_ai?select=key,data&key=like.' + ctx + ':*&order=key&limit=1000&offset=' + o).then(function (a) {
+        a = a || []; a.forEach(function (row) { var id = String(row.key).slice(ctx.length + 1); if (okId(id) && row.data && !D.aiAll[id]) { D.aiAll[id] = cleanAi(row.data); n++; } });
+        return a.length === 1000 && o < 4000 ? page(o + 1000) : null;
+      });
+    }
+    return page(0).then(function () { if (n) aiLocalSave(); }, function (e) { cloudFail(e); });
+  }
+  function aiSaveCloud(fresh) {
+    if (!cloud() || D.cloud === 'missing') return;
+    var ctx = ctxId(), rows = Object.keys(fresh).filter(okId).map(function (id) { return { key: ctx + ':' + id, data: fresh[id] }; });
+    if (rows.length) C.sb.req('POST', '/rest/v1/company_ai', rows, { Prefer: 'resolution=ignore-duplicates,return=minimal' }).catch(function () {});
+  }
+  function applyAi() { D.ai = {}; if (!D.aiAll) return; D.results.forEach(function (r) { if (D.aiAll[r.id]) D.ai[r.id] = D.aiAll[r.id]; }); }
+
+  /* ---------- search ---------- */
+  function inScope(r) { return D.cats.indexOf(r.cat) > -1 && (D.city === ALL || r.km <= D.radius); }
+  function search(force) {
+    if (!D.cats.length) { D.err = 'Pick at least one type of business.'; C.draw(); return; }
+    var seq = ++D.seq, key = qkey(), cached = force ? null : cacheGet(key);
+    D.busy = 'search'; D.phase = 'Checking your saved companies\u2026'; D.err = ''; D.msg = ''; D.picked = {}; D.shown = PAGE; D.weak = false; D.results = []; D.ai = {}; D.known = {}; D.knownN = 0; C.draw();
+    var aiP = aiLoadAll().then(function () { if (seq === D.seq) { applyAi(); if (!D.busy || D.results.length) drawList(); } });
+    if (cached) {
+      D.results = dedupe(cached.list.map(function (x) { return build(x[0], x[1], x[2], x[3], x[4]); }).filter(inScope));
+      D.busy = ''; D.msg = D.results.length + ' companies from your last search (' + ago(cached.t) + '). Press \u201CSearch again\u201D under More options for the newest data.';
+      aiP.then(function () { if (seq === D.seq) { applyAi(); C.draw(); } }); C.draw(); return;
+    }
+    var dbP = dbLoad().then(function (rows) {
+      if (seq !== D.seq) return;
+      var list = [];
+      rows.forEach(function (row) { if (!okId(row.id) || !row.d || typeof row.d !== 'object') return; D.known[row.id] = 1; D.knownN++; var r = build(row.id, row.name, +row.lat, +row.lon, row.d); if (inScope(r)) list.push(r); });
+      if (list.length) { D.results = dedupe(list); applyAi(); D.phase = D.results.length + ' saved companies shown. Looking for new ones\u2026'; }
+      else D.phase = 'Searching OpenStreetMap (the first search can take a minute)\u2026';
+      chip(); C.draw();
+    });
+    dbP.then(function () {
+      return overpass(buildQuery()).then(function (j) {
+        if (seq !== D.seq) return;
+        var fresh = parse(j.elements || []), before = D.results.length, map = {};
+        D.results.forEach(function (r) { map[r.id] = r; }); fresh.forEach(function (r) { map[r.id] = r; });
+        D.results = dedupe(Object.keys(map).map(function (k) { return map[k]; }));
+        var isNew = fresh.filter(function (r) { return !D.known[r.id] && r.kscore > 0; }).length;
+        D.busy = ''; applyAi(); D.msg = D.results.length + ' companies' + (isNew ? ', ' + isNew + ' new' : '') + (before && !isNew ? ' (nothing new since last time)' : '') + '. Best matches first.'; C.draw();
+        cacheSet(key, D.results);
+        dbSave(D.results).then(function (n) { if (seq === D.seq && n) { D.msg += ' ' + n + ' new saved to the shared list.'; C.draw(); } });
+      }, function (e) {
+        if (seq !== D.seq) return;
+        D.busy = '';
+        if (D.results.length) D.msg = 'OpenStreetMap is busy, so these are your saved companies only (' + e.message + '). Try again in a minute for new ones.';
+        else D.err = 'Could not reach OpenStreetMap (' + e.message + '). The free servers can be busy. Try again in a minute, or pick a smaller area.';
+        C.draw();
+      });
+    });
+  }
+
+  /* ---------- list ---------- */
+  var exKey = '', exRe = null;
+  function excluded(name) {
+    var e = exclude();
+    if (e !== exKey) { exKey = e; var w = e.split(',').map(function (x) { return x.trim().toLowerCase(); }).filter(Boolean); exRe = w.length ? new RegExp('(^|[^a-z0-9])(' + w.map(reEsc).join('|') + ')($|[^a-z0-9])') : null; }
+    return !!exRe && exRe.test(name.toLowerCase());
+  }
+  function sc(r) { return D.ai[r.id] ? D.ai[r.id].match : r.fit; }
+  function view() {
+    var q = D.q.split(',').map(function (w) { return w.trim().toLowerCase(); }).filter(Boolean);
+    var l = D.results.filter(function (r) {
+      if (excluded(r.name)) return false;
+      if (!q.length) return true;
+      var h = (r.name + ' ' + r.type + ' ' + r.cat + ' ' + r.web + ' ' + r.city + ' ' + r.hits.join(' ') + ' ' + r.txt).toLowerCase();
+      return q.some(function (w) { return h.indexOf(w) > -1; });
+    });
+    l.sort(function (a, b) { return sc(b) - sc(a) || a.km - b.km; });
+    var strong = l.filter(function (r) { return D.weak || D.ai[r.id] || r.fit >= MIN_FIT; });
+    return { list: strong, hidden: l.length - strong.length };
+  }
+  function row(r) {
+    var a = D.ai[r.id], s = sc(r), val = a ? a.value : r.value, done = C.state.sponsors.some(function (x) { return x.id === r.id; });
+    var why = a ? a.reason : (r.hits.length ? 'Matches: ' + r.hits.slice(0, 4).join(', ') : ''), sub = [r.type, r.city, D.city === ALL ? '' : Math.round(r.km) + ' km'].filter(Boolean).map(esc).join(' \u00b7 ');
+    return '<div class="dc-item' + (done ? ' done' : '') + '"><label class="dc-pick"><input type="checkbox" ' + (D.picked[r.id] ? 'checked ' : '') + 'onchange="R2R_D.pick(\'' + r.id + '\')" aria-label="Select ' + esc(r.name) + '"></label>' +
+      '<div class="dc-main"><b>' + esc(r.name) + '</b>' + (a ? ' <span class="pill dark" title="Checked by AI">AI</span>' : '') + '<small>' + sub + '</small>' + (why ? '<span class="why">' + esc(why) + '</span>' : '') +
+      '<span class="dc-links">' + (r.web ? '<a href="' + esc(r.web) + '" target="_blank" rel="noopener noreferrer">website</a>' : '') + '<a href="' + r.osm + '" target="_blank" rel="noopener noreferrer">map</a>' + (r.phone ? '<span>' + esc(r.phone) + '</span>' : '') + '</span></div>' +
+      '<div class="dc-fit" title="How well this company fits the rally"><b>' + s + '%</b><div class="bar"><i style="width:' + s + '%"></i></div><span class="pill v-' + val + '" title="Estimated sponsor value">' + val + '</span></div>' +
+      '<div class="dc-act">' + (done ? '<span class="pill hi">Added</span>' : '<button type="button" class="sm" onclick="R2R_D.add(\'' + r.id + '\')">Add</button>') + '<button type="button" class="ghost sm" onclick="R2R_D.mail(\'' + r.id + '\')">Email</button></div></div>';
+  }
+  function listHtml() {
+    var v = view(), vis = v.list.slice(0, D.shown);
+    if (!vis.length) return '<div class="dc-empty">' + (D.busy ? '' : 'Nothing matches. Try another area, other business types or a different filter.') + '</div>' + (v.hidden ? '<button type="button" class="ghost sm" onclick="R2R_D.weak()">Show ' + v.hidden + ' weaker matches</button>' : '');
+    return '<div class="dc-list">' + vis.map(row).join('') + '</div>' +
+      '<div class="row" style="margin-top:12px">' + (v.list.length > D.shown ? '<button type="button" class="ghost" onclick="R2R_D.rows()">Show more (' + (v.list.length - D.shown) + ')</button>' : '') +
+      (v.hidden && !D.weak ? '<button type="button" class="ghost sm" onclick="R2R_D.weak()">Show ' + v.hidden + ' weaker matches</button>' : '') + '</div>';
+  }
+  function drawList() { var e = document.getElementById('dlist'); if (e) e.innerHTML = listHtml(); var n = document.getElementById('dcount'); if (n) n.textContent = countText(); }
+  function countText() { var v = view(), a = v.list.filter(function (r) { return D.ai[r.id]; }).length; return v.list.length + ' companies' + (a ? ' \u00b7 ' + a + ' AI-checked' : ''); }
+
+  /* ---------- AI (Gemini) ---------- */
   function rank() {
-    var cf = cfg(); if (!cf.key) { D.err = 'Paste your Gemini API key first (AI settings below).'; C.draw(); return; }
-    var l = view().slice(0, 40); if (!l.length) { D.err = 'Search for companies first.'; C.draw(); return; }
-    var ev = C.state.event;
-    var data = l.map(function (r, i) { return { i: i, name: r.name, type: r.type, category: r.cat, distance_km: Math.round(r.km * 10) / 10, city: r.city, has_website: !!r.web, keyword_hits: r.hits, capacity_seats: r.cap || null }; });
+    var cf = cfg();
+    if (!cf.key) { D.more = true; D.err = 'AI is optional. To use it, paste your free Gemini key under \u201CMore options\u201D.'; C.draw(); return; }
+    var l = view().list.filter(function (r) { return !D.ai[r.id] && r.fit >= 15; }).slice(0, BATCH);
+    if (!l.length) { D.err = ''; D.msg = 'The best matches are already checked by AI. Nothing new to rank.'; C.draw(); return; }
+    var ev = C.state.event || {}, lines = l.map(function (r, i) { return [i, r.name, r.type, r.city, D.city === ALL ? '' : Math.round(r.km), r.hits.join('/'), r.cap || ''].join('|'); }).join('\n');
     var prompt = [
       'You help the organisers of "' + ev.name + '" (' + [ev.date, ev.place, 'Netherlands'].filter(Boolean).join(', ') + '), a rally / sports-car event with a relatively affluent audience, find local sponsors.',
-      'Below is a JSON list of REAL businesses from OpenStreetMap in Limburg (Netherlands), ' + (D.city === ALL ? 'across the whole province' : 'around ' + D.city) + '. Use ONLY this data. Never invent facts about a company.',
-      'Weighting, highest first: (1) automotive and motorsport businesses: dealers, premium/sports/exotic/classic cars, specialists of brands such as Porsche, BMW, Mercedes-AMG, Audi, Ferrari, Lamborghini, McLaren, Aston Martin, detailing, wrapping, PPF, ceramic coating, tuning, wheels, tyres, performance parts, car audio and electronics; (2) businesses that serve affluent car enthusiasts: luxury, watches, jewellery, menswear, eyewear, real estate, wealth management, financial advice, leasing, insurance, business services; (3) hospitality and events: hotels, fine dining, wine, catering, golf, wellness.',
-      'Score ordinary petrol stations, supermarkets, snack bars, generic shops and large national chains LOW.',
-      'Restaurants: prefer ones that could host a lunch for a group of 100+ people (capacity_seats, hotel/zaal/brasserie/kasteel in the name). The data has no ratings, so never call a restaurant highly rated.',
-      D.kw.length ? 'Organiser focus keywords: ' + D.kw.join(', ') + '.' : '',
-      'For each company give: match (0-100 overall sponsor fit), crit = four scores 0-100 in this order [industry fit, audience overlap, region/proximity (use distance_km), motorsport affinity], value ("low","medium" or "high", a guess from business type only), reason (max 20 words, cite only the given data).',
-      'Return ONLY a JSON array like [{"i":0,"match":80,"crit":[80,70,90,60],"value":"medium","reason":"..."}].',
-      'Data: ' + JSON.stringify(data)
+      'Rate each REAL business below (OpenStreetMap, Limburg NL) for sponsor fit. Use only this data and never invent facts.',
+      'Priority high to low: (1) automotive and motorsport: dealers, premium/sports/exotic/classic cars, brand specialists (Porsche, BMW, Mercedes-AMG, Audi, Ferrari, Lamborghini, McLaren, Aston Martin, Bentley), detailing, wrapping, PPF, ceramic coating, tuning, wheels, tyres, performance parts, car audio and electronics, racewear; (2) businesses serving affluent car lovers: luxury, watches, jewellery, menswear, eyewear, real estate, wealth management, financial advice, leasing, insurance, business services; (3) hospitality and events: hotels, fine dining, wine, catering, golf, wellness.',
+      'Low: petrol stations, supermarkets, snack bars, generic shops, national chains. Restaurants: prefer places that can host a group lunch of 100+ (seats, zaal/brasserie/kasteel/hotel in the name). The data has no ratings.',
+      'Line format: index|name|type|city|km|keywords|seats',
+      'Answer ONLY a JSON array like [{"i":0,"m":80,"v":"medium","r":"max 15 words, cite only the data"}] where m = fit 0-100 and v = low, medium or high (sponsor value guess).',
+      lines
     ].join('\n');
     D.busy = 'ai'; D.err = ''; C.draw();
-    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(cf.model) + ':generateContent';
-    fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cf.key },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.2, responseMimeType: 'application/json' } }) })
+    fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(cf.model) + ':generateContent', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cf.key },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0, maxOutputTokens: 3000, responseMimeType: 'application/json' } }) })
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error((j.error && j.error.message) || ('HTTP ' + r.status)); return j; }); })
       .then(function (j) {
-        var txt = j.candidates[0].content.parts.map(function (p) { return p.text || ''; }).join('');
-        var arr = JSON.parse(txt.replace(/```json|```/g, '').trim());
-        arr.forEach(function (a) {
-          var r = l[a.i]; if (!r) return;
-          D.ai[r.id] = { match: clamp(a.match), crit: (a.crit || []).slice(0, 4).map(clamp), value: ['low', 'medium', 'high'].indexOf(a.value) > -1 ? a.value : 'medium', reason: String(a.reason || '') };
-        });
-        D.busy = ''; D.msg = 'AI ranked ' + arr.length + ' companies. The reasons come from the AI, so check them before you approach anyone.'; C.draw();
+        var txt = j.candidates[0].content.parts.map(function (p) { return p.text || ''; }).join(''), arr = JSON.parse(txt.replace(/```json|```/g, '').trim()), fresh = {};
+        arr.forEach(function (a) { var r = l[a.i]; if (!r) return; fresh[r.id] = cleanAi(a); });
+        Object.keys(fresh).forEach(function (id) { D.ai[id] = fresh[id]; D.aiAll[id] = fresh[id]; });
+        aiLocalSave(); aiSaveCloud(fresh);
+        D.busy = ''; D.msg = 'AI checked ' + Object.keys(fresh).length + ' companies' + (cloud() && D.cloud !== 'missing' ? ' and saved the answers for your team' : '') + '. Read the reasons before you contact anyone.'; C.draw();
       })
-      .catch(function (e) { D.busy = ''; D.err = 'Gemini error: ' + e.message + ' (If the key is invalid: try a key from Google Cloud Console > APIs & Services > Credentials, restricted to the Gemini API. If it says quota or 429, wait a minute.)'; C.draw(); });
+      .catch(function (e) { D.busy = ''; D.err = 'Gemini error: ' + e.message + ' (Invalid key? Make a new one in Google AI Studio. Quota or 429? Wait a minute.)'; C.draw(); });
   }
 
   /* ---------- add to the sponsor list ---------- */
+  function rec(id) { return D.results.filter(function (x) { return x.id === id; })[0]; }
   function add(ids) {
     var st = C.state, n = 0;
     ids.forEach(function (id) {
-      var r = D.results.filter(function (x) { return x.id === id; })[0]; if (!r || st.sponsors.some(function (s) { return s.id === id; })) return;
-      var a = D.ai[id];
+      var r = rec(id); if (!r || st.sponsors.some(function (s) { return s.id === id; })) return;
+      var a = D.ai[id], cr = critOf(r); if (a) cr[0] = a.match;
       var notes = 'Real company from OpenStreetMap.' + (r.addr ? ' Address: ' + r.addr + ' ' + r.city + '.' : '') + (r.phone ? ' Phone: ' + r.phone + '.' : '') + (r.web ? ' Website: ' + r.web + '.' : '') + (r.hits.length ? ' Keywords: ' + r.hits.join(', ') + '.' : '') + (a ? ' AI note: ' + a.reason : '');
-      var s = C.sp(id, r.name, r.cat === 'Other' ? cap(r.type || 'Other') : r.cat, 'Limburg', r.city || (D.city === ALL ? 'Limburg' : D.city), '?', a ? a.match : null, a ? a.value : null, 'suggested',
-        a && a.crit.length === 4 ? a.crit : null, notes, r.email || r.web || '(no email found - use website or phone)');
-      st.sponsors.push(s); n++;
+      st.sponsors.push(C.sp(id, r.name, r.cat === 'Other' ? cap(r.type || 'Other') : r.cat, 'Limburg', r.city || (D.city === ALL ? 'Limburg' : D.city), '?', a ? a.match : r.fit, a ? a.value : r.value, 'suggested', cr, notes, r.email || r.web || '(no email found - use website or phone)'));
+      n++;
     });
-    C.save(); D.picked = {}; D.msg = n + ' added. Open "Find sponsors" to review and approach them.'; C.draw();
+    C.save(); D.picked = {}; D.msg = n + ' added to your pipeline.'; C.draw();
   }
 
   /* ---------- page ---------- */
-  function tbl(l) {
-    var ranked = Object.keys(D.ai).length > 0, st = C.state;
-    return '<div class="wrap"><table class="tbl dtbl"><tr><th></th><th>Company</th><th>Type</th><th>City</th><th>km</th><th>Keywords</th>' + (ranked ? '<th>Match</th>' : '') + '<th></th></tr>' +
-      l.slice(0, 200).map(function (r) {
-        var a = D.ai[r.id], done = st.sponsors.some(function (s) { return s.id === r.id; });
-        return '<tr><td><input type="checkbox" ' + (D.picked[r.id] ? 'checked ' : '') + 'onchange="R2R_D.pick(\'' + r.id + '\')"></td><td><b>' + esc(r.name) + '</b>' +
-          (a ? '<span class="why">' + esc(a.reason) + '</span>' : '') + (r.web ? '<a href="' + esc(r.web) + '" target="_blank" rel="noopener noreferrer"><small>website</small></a> ' : '') + '<a href="' + r.osm + '" target="_blank" rel="noopener noreferrer"><small>map</small></a></td>' +
-          '<td>' + esc(r.type || '-') + '<br><small>' + esc(r.cat) + '</small></td><td>' + esc(r.city) + '</td><td>' + r.km.toFixed(1) + '</td>' +
-          '<td><small>' + (r.hits.length ? esc(r.hits.join(', ')) : '-') + '</small></td>' +
-          (ranked ? '<td>' + (a ? '<b>' + a.match + '%</b> <span class="pill v-' + a.value + '">' + a.value + '</span>' : '<small>not ranked</small>') + '</td>' : '') +
-          '<td>' + (done ? '<span class="pill hi">Added</span>' : '<button class="ghost sm" onclick="R2R_D.add(\'' + r.id + '\')">Add</button>') + ' <button class="ghost sm" onclick="R2R_D.mail(\'' + r.id + '\')">Email</button></td></tr>';
-      }).join('') + '</table></div>' + (l.length > 200 ? '<p class="mute">Showing the best 200 of ' + l.length + '. Narrow it with keywords.</p>' : '');
-  }
   P.discover = function () {
-    var cf = cfg(), l = view(), busy = D.busy;
-    var chips = function (arr, on, fn) { return arr.map(function (n, i) { return '<button class="chip' + (on.indexOf(n) > -1 ? ' on' : '') + '" onclick="R2R_D.' + fn + '(' + i + ')">' + esc(n) + '</button>'; }).join(''); };
-    return '<div class="top"><div><h2>Discover companies</h2><p class="mute">Real businesses ' + (D.city === ALL ? 'in all of Limburg' : 'near ' + D.city) + ' from OpenStreetMap \u00b7 Dutch companies only</p></div></div>' +
+    var cf = cfg(), busy = D.busy, hasRes = D.results.length > 0;
+    var cats = CATNAMES.map(function (n, i) { return '<button type="button" class="chip' + (D.cats.indexOf(n) > -1 ? ' on' : '') + '" title="' + esc(HINT[n]) + '" onclick="R2R_D.cat(' + i + ')">' + esc(LAB[n]) + '</button>'; }).join('');
+    var cityOpts = [ALL].concat(CITIES.map(function (c) { return c[0]; })).map(function (n) { return '<option' + (n === D.city ? ' selected' : '') + '>' + n + '</option>'; }).join('');
+    var radiusOpts = [5, 10, 25, 35, 50].map(function (v) { return '<option value="' + v + '"' + (v === D.radius ? ' selected' : '') + '>within ' + v + ' km</option>'; }).join('');
+    return '<div class="top"><div><h2>Discover companies</h2><p class="mute">Find local companies that could sponsor your rally.</p></div>' + chipHtml() + '</div>' +
       (D.err ? '<div class="banner">' + esc(D.err) + '</div>' : '') + (D.msg ? '<div class="note">' + esc(D.msg) + '</div>' : '') +
-      '<div class="card" style="margin-bottom:16px"><div class="ctrl"><div><div class="lbl">City or region</div><select onchange="R2R_D.city(this.value)">' +
-      [ALL].concat(CITIES.map(function (c) { return c[0]; })).map(function (n) { return '<option' + (n === D.city ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select></div>' +
-      '<div><div class="lbl">Radius around ' + (D.city === ALL ? 'the city' : D.city) + '</div><select ' + (D.city === ALL ? 'disabled ' : '') + 'onchange="R2R_D.radius(this.value)">' +
-      [5, 10, 25, 35, 50].map(function (v) { return '<option value="' + v + '"' + (v === D.radius ? ' selected' : '') + '>' + v + ' km</option>'; }).join('') + '</select></div>' +
-      '<div><div class="lbl">Business types to fetch</div><div class="chips">' + chips(CATNAMES, D.cats, 'cat') + '</div></div></div>' +
-      '<div class="lbl">Keyword groups (find by name and score results)</div><div class="chips">' + chips(KEYGROUPS.map(function (g) { return g.name; }), D.groups, 'grp') + '</div>' +
-      '<div class="lbl">Extra keywords (only show results containing these)</div><div class="kw">' + D.kw.map(function (w, i) { return '<span class="xtag" onclick="R2R_D.rmkw(' + i + ')">' + esc(w) + ' \u2715</span>'; }).join('') +
-      '<input id="dk" placeholder="e.g. porsche, detailing, makelaar" onkeydown="if(event.key===\'Enter\'){R2R_D.kw();return false}"><button class="ghost sm" onclick="R2R_D.kw()">Add keyword</button></div>' +
-      '<div class="lbl">Hide these names (comma separated)</div><div class="kw"><input id="dx" style="max-width:100%;flex:1" value="' + esc(exclude()) + '"><button class="ghost sm" onclick="R2R_D.saveEx()">Save</button><button class="ghost sm" onclick="R2R_D.resetEx()">Reset</button></div>' +
-      '<div class="row"><button onclick="R2R_D.search()"' + (busy ? ' disabled' : '') + '>Search real companies</button><button class="ghost" onclick="R2R_D.rank()"' + (busy || !D.results.length ? ' disabled' : '') + '>Rank with AI</button>' +
-      (busy === 'search' ? '<span class="spin">Searching OpenStreetMap, wide areas can take up to 3 minutes\u2026</span>' : busy === 'ai' ? '<span class="spin">Gemini is ranking\u2026</span>' : '') + '</div></div>' +
-      (D.results.length ? '<div class="row" style="margin-bottom:10px"><b>' + l.length + ' shown</b><button class="ghost sm" onclick="R2R_D.all()">Select all shown</button><button class="sm" onclick="R2R_D.addPicked()">Add selected</button></div>' + tbl(l) : '') +
-      '<div class="card" style="margin-top:20px;max-width:560px"><div class="lbl">AI settings (Gemini)</div><label for="gk">API key (free from Google AI Studio)</label><input id="gk" type="password" value="' + esc(cf.key) + '" placeholder="Paste key"><label for="gm">Model</label><input id="gm" value="' + esc(cf.model) + '">' +
-      '<div class="row" style="margin-top:12px"><button class="sm" onclick="R2R_D.saveKey()">Save</button><button class="ghost sm" onclick="R2R_D.clearKey()">Remove key</button></div>' +
-      '<p class="mute" style="font-size:13px">The key stays in this browser only. Only company names, types and distances are sent to Google, never personal data. On the free tier Google may use prompts to improve its products.</p></div>';
+      '<div class="card dc-steps">' +
+      '<div class="dc-step"><span class="dc-n">1</span><div class="dc-b"><div class="lbl">Where</div><div class="dc-sel"><select aria-label="City" onchange="R2R_D.city(this.value)">' + cityOpts + '</select>' + (D.city === ALL ? '' : '<select aria-label="Distance" onchange="R2R_D.radius(this.value)">' + radiusOpts + '</select>') + '</div></div></div>' +
+      '<div class="dc-step"><span class="dc-n">2</span><div class="dc-b"><div class="lbl">What kind of companies</div><div class="chips">' + cats + '</div></div></div>' +
+      '<div class="dc-step"><span class="dc-n">3</span><div class="dc-b"><button type="button" class="dc-go" onclick="R2R_D.search()"' + (busy ? ' disabled' : '') + '>Find companies</button>' +
+      (busy === 'search' ? ' <span class="spin">' + esc(D.phase) + '</span>' : busy === 'ai' ? ' <span class="spin">AI is checking the best matches\u2026</span>' : '') + '</div></div></div>' +
+      '<details class="card dc-more"' + (D.more ? ' open' : '') + ' ontoggle="R2R_D.opts(this.open)"><summary>More options</summary>' +
+      '<div class="lbl">AI ranking (optional)</div><div class="dc-sel"><input id="gk" type="password" aria-label="Gemini API key" value="' + esc(cf.key) + '" placeholder="Gemini API key (free from Google AI Studio)"><input id="gm" aria-label="Model" value="' + esc(cf.model) + '" style="max-width:240px">' +
+      '<button type="button" class="sm" onclick="R2R_D.saveKey()">Save</button><button type="button" class="ghost sm" onclick="R2R_D.clearKey()">Remove key</button></div>' +
+      '<p class="mute dc-hint">The key stays in this browser. Only company names, types and distances go to Google.</p>' +
+      '<div class="lbl">Hide these names</div><div class="kw"><input id="dx" style="max-width:100%;flex:1" aria-label="Names to hide" value="' + esc(exclude()) + '"><button type="button" class="ghost sm" onclick="R2R_D.saveEx()">Save</button><button type="button" class="ghost sm" onclick="R2R_D.resetEx()">Reset</button></div>' +
+      '<div class="lbl">Shared list</div><div class="dc-sel"><button type="button" class="ghost sm" onclick="R2R_D.again()"' + (busy ? ' disabled' : '') + '>Search again (newest data)</button></div>' +
+      '<p class="mute dc-hint">' + (!cloud() ? 'Log in with a cloud account to share found companies with your team.' : D.cloud === 'missing' ? 'Run supabase-found.sql once in Supabase (SQL editor) to switch the shared list on.' : D.cloud === 'error' ? 'Could not reach the shared list: ' + esc(D.cloudErr) : 'Companies you find are saved for everyone on your team, so the next search is faster.') + '</p></details>' +
+      (hasRes ? '<div id="dres"><div class="dc-bar"><b id="dcount">' + esc(countText()) + '</b><input id="dq" type="search" placeholder="Filter, e.g. porsche, detailing" aria-label="Filter results" value="' + esc(D.q) + '" oninput="R2R_D.filter(this.value)">' +
+        '<button type="button" class="ghost sm" onclick="R2R_D.rank()"' + (busy ? ' disabled' : '') + '>Rank best with AI</button><button type="button" class="ghost sm" onclick="R2R_D.all()">Select all</button><button type="button" class="sm" onclick="R2R_D.addPicked()">Add selected</button></div>' +
+        '<div id="dlist">' + listHtml() + '</div></div>' : (busy ? '' : '<div class="dc-empty">Choose where and what, then press <b>Find companies</b>.</div>'));
   };
 
   /* ---------- outreach email ---------- */
   var BEN_NL = 'uw logo op onze auto en banners, een plek in de paddock en vermeldingen op onze social media';
   var BEN_EN = 'your logo on our car and banners, a stand in the paddock and mentions on our social media';
   function me() { var k = C.rd('r2r_session', null), u = C.rd('r2r_users', {})[k] || {}; return { name: u.name || '', team: u.team || '', email: k && k !== 'guest' ? k : '' }; }
-  function rec(id) { return D.results.filter(function (x) { return x.id === id; })[0]; }
   function mailText(r, lang) {
     var ev = C.state.event, m = me(), nl = lang === 'nl', rest = r.cat === 'Restaurants (group lunch)', car = r.cat === 'Automotive', n = ev.name, intro, info, pitch, ask;
     var sig = (m.name || '') + (m.team ? '\n' + m.team : '') + (m.email ? '\n' + m.email : '');
@@ -270,19 +484,22 @@
     location.href = 'mailto:' + to + '?subject=' + encodeURIComponent(g('ms').value) + '&body=' + encodeURIComponent(g('mb').value);
   }
   function mailCopy() { var t = g('ms').value + '\n\n' + g('mb').value; (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { g('mm').textContent = 'Copied.'; }, function () { g('mb').select(); g('mm').textContent = 'Press Ctrl+C to copy.'; }); }
-  function tog(arr, v) { var i = arr.indexOf(v); if (i > -1) arr.splice(i, 1); else arr.push(v); C.draw(); }
+  var deb = null;
   window.R2R_D = {
-    radius: function (v) { D.radius = +v; },
-    city: function (v) { D.city = v; C.draw(); },
-    cat: function (i) { tog(D.cats, CATNAMES[i]); },
-    grp: function (i) { tog(D.groups, KEYGROUPS[i].name); },
-    kw: function () { var e = document.getElementById('dk'), v = e && e.value.trim(); if (v && D.kw.indexOf(v) < 0) D.kw.push(v); C.draw(); },
-    rmkw: function (i) { D.kw.splice(i, 1); C.draw(); },
+    city: function (v) { D.city = v; savePrefs(); C.draw(); },
+    radius: function (v) { D.radius = +v; savePrefs(); },
+    cat: function (i) { var n = CATNAMES[i], k = D.cats.indexOf(n); if (k > -1) { if (D.cats.length > 1) D.cats.splice(k, 1); } else D.cats.push(n); savePrefs(); C.draw(); },
+    search: function () { search(false); },
+    again: function () { search(true); },
+    filter: function (v) { D.q = v; D.shown = PAGE; clearTimeout(deb); deb = setTimeout(drawList, 150); },
+    weak: function () { D.weak = true; drawList(); },
+    rows: function () { D.shown += PAGE; drawList(); },
+    opts: function (open) { D.more = !!open; },
     saveEx: function () { C.wr('r2r_exclude', document.getElementById('dx').value); D.msg = 'Hide-list saved.'; C.draw(); },
     resetEx: function () { C.wr('r2r_exclude', DEFAULT_EXCLUDE); D.msg = 'Hide-list reset.'; C.draw(); },
-    search: search, rank: rank, mail: openMail, mlang: fillMail, mopen: mailOpen, mcopy: mailCopy, mai: mailAI, mclose: closeMail,
+    rank: rank, mail: openMail, mlang: fillMail, mopen: mailOpen, mcopy: mailCopy, mai: mailAI, mclose: closeMail,
     pick: function (id) { if (D.picked[id]) delete D.picked[id]; else D.picked[id] = 1; },
-    all: function () { view().slice(0, 200).forEach(function (r) { D.picked[r.id] = 1; }); C.draw(); },
+    all: function () { view().list.slice(0, D.shown).forEach(function (r) { D.picked[r.id] = 1; }); drawList(); },
     add: function (id) { add([id]); },
     addPicked: function () { var ids = Object.keys(D.picked); if (!ids.length) { D.err = 'Tick at least one company first.'; C.draw(); return; } add(ids); },
     saveKey: function () { C.wr('r2r_gemini', { key: document.getElementById('gk').value.trim(), model: document.getElementById('gm').value.trim() || DEFAULT_MODEL }); D.err = ''; D.msg = 'AI settings saved.'; C.draw(); },

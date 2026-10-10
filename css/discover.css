@@ -7,3 +7,46 @@
 .dtbl td{vertical-align:top}.dtbl input[type=checkbox]{width:auto}
 .dtbl a{color:var(--accent);font-weight:600;text-decoration:none}
 .spin{font-weight:600;color:var(--accent)}
+
+/* ===== simpler Discover layout ===== */
+.dc-steps{display:grid;gap:20px;margin-bottom:14px}
+.dc-step{display:flex;gap:14px;align-items:flex-start}
+.dc-n{flex:none;width:30px;height:30px;border:2px solid var(--ink);display:flex;align-items:center;justify-content:center;font:800 16px 'Barlow Condensed',sans-serif}
+.dc-b{flex:1;min-width:0}
+.dc-b .chips{margin-bottom:0}
+.dc-sel{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
+.dc-sel select{width:auto;min-width:170px}
+.dc-sel input{flex:1 1 220px;width:auto}
+.dc-go{font-size:22px;padding:14px 34px}
+.dc-chip{font-size:13px;color:var(--mute);align-self:center;white-space:nowrap}
+.dc-chip.ok{color:var(--ink)}
+.dc-chip.warn{color:var(--accent)}
+.dc-more{margin-bottom:18px;padding:0 18px}
+.dc-more summary{cursor:pointer;padding:14px 0;font-weight:700;letter-spacing:.06em;list-style:none}
+.dc-more summary::-webkit-details-marker{display:none}
+.dc-more summary::before{content:"+";display:inline-block;width:18px;color:var(--mute)}
+.dc-more[open] summary::before{content:"\2013"}
+.dc-more .lbl{margin-top:14px}
+.dc-hint{font-size:13px;margin:4px 0 12px}
+.dc-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:20px 0 12px}
+.dc-bar input{flex:1 1 220px;max-width:300px;width:auto}
+.dc-list{display:grid;gap:8px}
+.dc-item{display:grid;grid-template-columns:auto 1fr 120px auto;gap:14px;align-items:center;background:var(--panel);border:1px solid var(--line);padding:12px 14px}
+.dc-item:hover{border-color:var(--ink)}
+.dc-item.done{opacity:.6}
+.dc-pick input{width:auto}
+.dc-main b{display:inline}
+.dc-main small{display:block}
+.dc-links{display:flex;gap:12px;flex-wrap:wrap;font-size:13px;margin-top:4px}
+.dc-links a{color:var(--accent);font-weight:600;text-decoration:none}
+.dc-links span{color:var(--mute)}
+.dc-fit b{font:800 22px 'Barlow Condensed',sans-serif}
+.dc-fit .bar{margin:2px 0 6px;height:6px}
+.dc-act{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.dc-empty{border:2px dashed var(--line);padding:28px 16px;text-align:center;color:var(--mute);margin:12px 0}
+@media(max-width:760px){
+  .dc-item{grid-template-columns:auto 1fr;gap:10px 12px}
+  .dc-fit,.dc-act{grid-column:2}
+  .dc-act{justify-content:flex-start}
+  .dc-go{width:100%}
+}
